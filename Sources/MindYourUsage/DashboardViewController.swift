@@ -5,6 +5,7 @@ import MindYourUsageCore
 final class DashboardViewController: NSViewController {
     private let store: UsageStore
     private let coordinator: RefreshCoordinator
+    private let loginItemController = LoginItemController()
     private var observerID: UUID?
 
     private let titleLabel = NSTextField(labelWithString: "Codex Usage")
@@ -14,6 +15,7 @@ final class DashboardViewController: NSViewController {
     private let fiveHourPanel = UsagePanelView()
     private let sevenDayPanel = UsagePanelView()
     private let detailsLabel = NSTextField(labelWithString: "")
+    private let openAtLoginSwitch = NSSwitch()
     private let errorLabel = NSTextField(labelWithString: "")
 
     init(store: UsageStore, coordinator: RefreshCoordinator) {
@@ -35,12 +37,16 @@ final class DashboardViewController: NSViewController {
     }
 
     override func loadView() {
-        let root = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 360, height: 342))
-        root.material = .popover
+        let root = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 360, height: 374))
+        root.material = .menu
         root.blendingMode = .behindWindow
         root.state = .active
+        root.isEmphasized = true
         root.wantsLayer = true
-        root.layer?.cornerRadius = 14
+        root.layer?.cornerRadius = 18
+        root.layer?.masksToBounds = true
+        root.layer?.borderWidth = 0.8
+        root.layer?.borderColor = NSColor.white.withAlphaComponent(0.28).cgColor
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -74,6 +80,8 @@ final class DashboardViewController: NSViewController {
         detailsLabel.translatesAutoresizingMaskIntoConstraints = false
         detailsLabel.widthAnchor.constraint(equalToConstant: 328).isActive = true
         stack.addArrangedSubview(detailsLabel)
+
+        stack.addArrangedSubview(makeLoginItemRow())
 
         errorLabel.font = .systemFont(ofSize: 11, weight: .medium)
         errorLabel.textColor = .systemRed
@@ -160,6 +168,35 @@ final class DashboardViewController: NSViewController {
         return container
     }
 
+    private func makeLoginItemRow() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.widthAnchor.constraint(equalToConstant: 328).isActive = true
+        container.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
+        let label = NSTextField(labelWithString: "Open at Login")
+        label.font = .systemFont(ofSize: 12.5, weight: .medium)
+        label.textColor = .labelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        openAtLoginSwitch.target = self
+        openAtLoginSwitch.action = #selector(toggleOpenAtLogin)
+        openAtLoginSwitch.controlSize = .small
+        openAtLoginSwitch.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(label)
+        container.addSubview(openAtLoginSwitch)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            openAtLoginSwitch.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            openAtLoginSwitch.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        return container
+    }
+
     private func configureIconButton(_ button: NSButton, symbol: String, tooltip: String, action: Selector) {
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)
         button.imageScaling = .scaleProportionallyDown
@@ -178,6 +215,7 @@ final class DashboardViewController: NSViewController {
         subtitleLabel.stringValue = UsageFormatting.lastRefreshText(snapshot?.fetchedAt)
 
         refreshButton.isEnabled = !state.isRefreshing
+        openAtLoginSwitch.state = loginItemController.isEnabled ? .on : .off
         let pauseSymbol = state.isPaused ? "play.fill" : "pause.fill"
         pauseButton.image = NSImage(systemSymbolName: pauseSymbol, accessibilityDescription: state.isPaused ? "Resume" : "Pause")
         pauseButton.toolTip = state.isPaused ? "Resume" : "Pause"
@@ -212,5 +250,15 @@ final class DashboardViewController: NSViewController {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func toggleOpenAtLogin() {
+        do {
+            try loginItemController.setEnabled(openAtLoginSwitch.state == .on)
+        } catch {
+            openAtLoginSwitch.state = loginItemController.isEnabled ? .on : .off
+            errorLabel.stringValue = "Open at Login could not be changed."
+            errorLabel.isHidden = false
+        }
     }
 }

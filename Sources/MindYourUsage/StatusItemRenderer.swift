@@ -2,7 +2,7 @@ import AppKit
 import MindYourUsageCore
 
 enum StatusItemRenderer {
-    static let size = NSSize(width: 174, height: 23)
+    static let size = NSSize(width: 153, height: 23)
 
     static func image(for state: UsageViewState, appearance: NSAppearance?) -> NSImage {
         let snapshot = state.snapshot
@@ -48,20 +48,20 @@ enum StatusItemRenderer {
             .font: NSFont.monospacedSystemFont(ofSize: 8.4, weight: .semibold),
             .foregroundColor: NSColor.labelColor.withAlphaComponent(0.86 * alpha)
         ]
-        label.draw(at: NSPoint(x: 2, y: y - 0.2), withAttributes: labelAttributes)
+        label.draw(at: NSPoint(x: 0.5, y: y - 0.2), withAttributes: labelAttributes)
 
         drawCells(
             window: window,
-            rect: NSRect(x: 24, y: y + 1.2, width: 78, height: 5.4),
+            rect: NSRect(x: 23, y: y + 1.2, width: 77, height: 5.4),
             alpha: alpha
         )
 
-        let timeRect = NSRect(x: 108, y: y - 0.4, width: 62, height: 10)
+        let timeRect = NSRect(x: 107, y: y - 0.4, width: 46, height: 10)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .right
+        paragraph.alignment = .left
         let timeAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 8.1, weight: .medium),
-            .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.92 * alpha),
+            .foregroundColor: NSColor.labelColor.withAlphaComponent(0.86 * alpha),
             .paragraphStyle: paragraph
         ]
         resetText.draw(in: timeRect, withAttributes: timeAttributes)
@@ -73,7 +73,7 @@ enum StatusItemRenderer {
         let cellWidth = (rect.width - gap * CGFloat(cellCount - 1)) / CGFloat(cellCount)
         let remainingPercent = window?.remainingPercent ?? 0
         let litCells = Int(round((remainingPercent / 100) * Double(cellCount)))
-        let remainingColor = color(forRemainingPercent: remainingPercent).withAlphaComponent(0.92 * alpha)
+        let remainingColor = UsageColors.accent(forRemainingPercent: remainingPercent).withAlphaComponent(0.92 * alpha)
         let usedColor = NSColor.labelColor.withAlphaComponent(0.17 * alpha)
 
         for index in 0..<cellCount {
@@ -83,16 +83,6 @@ enum StatusItemRenderer {
             (index < litCells ? remainingColor : usedColor).setFill()
             path.fill()
         }
-    }
-
-    private static func color(forRemainingPercent remaining: Double) -> NSColor {
-        if remaining <= 8 {
-            return .systemRed
-        }
-        if remaining <= 20 {
-            return .systemOrange
-        }
-        return .labelColor
     }
 
     private static func drawRefreshDot() {
