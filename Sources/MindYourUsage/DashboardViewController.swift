@@ -8,14 +8,14 @@ final class DashboardViewController: NSViewController {
     private let loginItemController = LoginItemController()
     private var observerID: UUID?
 
-    private let titleLabel = NSTextField(labelWithString: "Codex Usage")
+    private let titleLabel = NSTextField(labelWithString: "see-your-usage")
     private let subtitleLabel = NSTextField(labelWithString: "Not refreshed yet")
     private let refreshButton = NSButton()
     private let pauseButton = NSButton()
     private let fiveHourPanel = UsagePanelView()
     private let sevenDayPanel = UsagePanelView()
     private let detailsLabel = NSTextField(labelWithString: "")
-    private let openAtLoginSwitch = NSSwitch()
+    private let openAtLoginSwitch = BlueSwitch()
     private let errorLabel = NSTextField(labelWithString: "")
 
     init(store: UsageStore, coordinator: RefreshCoordinator) {
@@ -104,6 +104,11 @@ final class DashboardViewController: NSViewController {
         }
     }
 
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        coordinator.refreshNow()
+    }
+
     private func makeHeader() -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -181,7 +186,6 @@ final class DashboardViewController: NSViewController {
 
         openAtLoginSwitch.target = self
         openAtLoginSwitch.action = #selector(toggleOpenAtLogin)
-        openAtLoginSwitch.controlSize = .small
         openAtLoginSwitch.translatesAutoresizingMaskIntoConstraints = false
 
         container.addSubview(label)

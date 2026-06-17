@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Codex Usage"
+APP_NAME="see-your-usage"
 SOURCE_APP="$ROOT_DIR/.build/release/$APP_NAME.app"
 INSTALL_DIR="$HOME/Applications"
 TARGET_APP="$INSTALL_DIR/$APP_NAME.app"

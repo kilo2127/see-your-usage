@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         button.imagePosition = .imageOnly
         button.target = self
         button.action = #selector(togglePopover)
-        button.toolTip = "Codex usage"
+        button.toolTip = "see-your-usage"
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateStatusItem(store.state)
     }
@@ -69,6 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         removeEventMonitors()
+    }
+
+    func popoverWillShow(_ notification: Notification) {
+        coordinator.refreshNow()
     }
 
     private func closePopover() {

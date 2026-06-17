@@ -1,4 +1,4 @@
-# Codex Usage
+# see-your-usage
 
 Minimal, safe, low-energy macOS menu bar app for watching your Codex usage.
 
@@ -12,7 +12,13 @@ cd see-your-usage
 ./scripts/run.sh
 ```
 
-That builds the app, installs it to `~/Applications/Codex Usage.app`, and starts it. After that, Spotlight can find `Codex Usage`.
+That builds the app, installs it to `~/Applications/see-your-usage.app`, and starts it. After that, Spotlight can find `see-your-usage`.
+
+## Supported Macs
+
+- macOS 14 or newer.
+- Apple Silicon and Intel Macs.
+- Requires Xcode Command Line Tools because this project builds from Swift source.
 
 ## Features
 

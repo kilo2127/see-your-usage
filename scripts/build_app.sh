@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Codex Usage"
-BUNDLE_ID="com.leung.CodexUsage"
+APP_NAME="see-your-usage"
+BUNDLE_ID="com.leung.see-your-usage"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
