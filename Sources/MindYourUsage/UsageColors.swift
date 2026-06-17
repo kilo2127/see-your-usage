@@ -1,13 +1,15 @@
 import AppKit
+import MindYourUsageCore
 
 enum UsageColors {
     static func accent(forRemainingPercent remaining: Double) -> NSColor {
-        if remaining <= 20 {
+        switch UsageRemainingBand.band(forRemainingPercent: remaining) {
+        case .red:
             return .systemRed
-        }
-        if remaining <= 50 {
+        case .yellow:
             return .systemYellow
+        case .green:
+            return .systemGreen
         }
-        return .systemGreen
     }
 }

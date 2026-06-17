@@ -42,7 +42,11 @@ public enum UsageFormatting {
     }
 
     public static func percent(_ value: Double) -> String {
-        "\(Int(round(value)))%"
+        "\(roundedPercent(value))%"
+    }
+
+    public static func roundedPercent(_ value: Double) -> Int {
+        Int(round(min(max(value, 0), 100)))
     }
 
     private static func timeFormatter(locale: Locale) -> DateFormatter {

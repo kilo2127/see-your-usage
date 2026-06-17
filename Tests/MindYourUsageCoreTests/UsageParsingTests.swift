@@ -82,3 +82,13 @@ func clampsUsagePercentages() throws {
     #expect(window.remainingPercent == 0)
     #expect(window.isBlocked)
 }
+
+@Test
+func remainingBandsUseDisplayedThirds() {
+    #expect(UsageRemainingBand.band(forRemainingPercent: 33.4) == .red)
+    #expect(UsageRemainingBand.band(forRemainingPercent: 33.5) == .yellow)
+    #expect(UsageRemainingBand.band(forRemainingPercent: 50) == .yellow)
+    #expect(UsageRemainingBand.band(forRemainingPercent: 66.4) == .yellow)
+    #expect(UsageRemainingBand.band(forRemainingPercent: 66.5) == .green)
+    #expect(UsageRemainingBand.band(forRemainingPercent: 100) == .green)
+}
