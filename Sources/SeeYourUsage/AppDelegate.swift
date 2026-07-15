@@ -1,12 +1,17 @@
 import AppKit
-import MindYourUsageCore
+import SeeYourUsageCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = UsageStore()
     private let loginItemController = LoginItemController()
     private lazy var coordinator = RefreshCoordinator(store: store)
-    private let statusItem = NSStatusBar.system.statusItem(withLength: StatusItemRenderer.size.width)
+    private lazy var statusItem: NSStatusItem = {
+        let item = NSStatusBar.system.statusItem(withLength: StatusItemRenderer.size.width)
+        item.autosaveName = "main-status-item"
+        item.behavior = [.removalAllowed]
+        return item
+    }()
     private let popover = NSPopover()
     private var observerID: UUID?
     private var eventMonitors: [Any] = []
@@ -45,12 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = false
         popover.delegate = self
-        popover.contentSize = NSSize(width: 360, height: 374)
+        popover.contentSize = DashboardViewController.preferredContentSize(for: store.state)
         popover.contentViewController = DashboardViewController(store: store, coordinator: coordinator)
     }
 
     private func updateStatusItem(_ state: UsageViewState) {
         guard let button = statusItem.button else { return }
+        popover.contentSize = DashboardViewController.preferredContentSize(for: state)
         button.image = StatusItemRenderer.image(for: state, appearance: button.effectiveAppearance)
         button.needsDisplay = true
     }

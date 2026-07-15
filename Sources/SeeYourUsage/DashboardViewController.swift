@@ -1,8 +1,20 @@
 import AppKit
-import MindYourUsageCore
+import SeeYourUsageCore
 
 @MainActor
 final class DashboardViewController: NSViewController {
+    static let contentWidth: CGFloat = 360
+    static let twoWindowHeight: CGFloat = 374
+    static let oneWindowHeight: CGFloat = 276
+
+    static func preferredContentSize(for state: UsageViewState) -> NSSize {
+        let windowCount = state.snapshot?.windows.count ?? 1
+        return NSSize(
+            width: contentWidth,
+            height: windowCount > 1 ? twoWindowHeight : oneWindowHeight
+        )
+    }
+
     private let store: UsageStore
     private let coordinator: RefreshCoordinator
     private let loginItemController = LoginItemController()
@@ -37,7 +49,12 @@ final class DashboardViewController: NSViewController {
     }
 
     override func loadView() {
-        let root = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 360, height: 374))
+        let root = NSVisualEffectView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: Self.contentWidth,
+            height: Self.oneWindowHeight
+        ))
         root.material = .menu
         root.blendingMode = .behindWindow
         root.state = .active
@@ -226,6 +243,8 @@ final class DashboardViewController: NSViewController {
 
         let fiveHour = snapshot?.window(kind: .fiveHour)
         let sevenDay = snapshot?.window(kind: .sevenDay)
+        fiveHourPanel.isHidden = fiveHour == nil
+        sevenDayPanel.isHidden = snapshot != nil && sevenDay == nil
         fiveHourPanel.usageWindow = fiveHour
         sevenDayPanel.usageWindow = sevenDay
         fiveHourPanel.subtitle = fiveHour.map { "Used \(UsageFormatting.percent($0.usedPercent))" } ?? ""
@@ -233,9 +252,14 @@ final class DashboardViewController: NSViewController {
 
         if let snapshot {
             let plan = snapshot.planType?.capitalized ?? "Codex"
-            let resetCredits = snapshot.resetCreditsAvailable.map { "\($0) reset credits" } ?? "No reset credit info"
-            let creditBalance = snapshot.credits?.balance.map { "balance \($0)" } ?? "credits unavailable"
-            detailsLabel.stringValue = "\(plan) · \(resetCredits) · \(creditBalance)"
+            var details = [plan]
+            if let resetCredits = snapshot.resetCreditsAvailable {
+                details.append("\(resetCredits) reset credits")
+            }
+            if let balance = snapshot.credits?.balance {
+                details.append("balance \(balance)")
+            }
+            detailsLabel.stringValue = details.joined(separator: " · ")
         } else {
             detailsLabel.stringValue = "Waiting for Codex usage data"
         }

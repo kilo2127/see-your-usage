@@ -1,5 +1,5 @@
 import AppKit
-import MindYourUsageCore
+import SeeYourUsageCore
 
 enum UsageColors {
     static func accent(forRemainingPercent remaining: Double) -> NSColor {

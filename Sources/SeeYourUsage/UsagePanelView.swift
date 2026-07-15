@@ -1,5 +1,5 @@
 import AppKit
-import MindYourUsageCore
+import SeeYourUsageCore
 
 final class UsagePanelView: NSView {
     var title: String = "" {

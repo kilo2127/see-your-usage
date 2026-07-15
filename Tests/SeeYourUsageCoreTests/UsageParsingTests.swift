@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MindYourUsageCore
+@testable import SeeYourUsageCore
 
 @Test
 func decodesCodexUsageWindows() throws {
@@ -66,6 +66,38 @@ func decodesCodexUsageWindows() throws {
     #expect(snapshot.window(kind: .sevenDay)?.remainingPercent == 71)
     #expect(snapshot.resetCreditsAvailable == 2)
     #expect(snapshot.additionalLimits.first?.name == "GPT-5.3-Codex-Spark")
+}
+
+@Test
+func decodesWeeklyOnlyUsageWithoutInventingFiveHourWindow() throws {
+    let json = """
+    {
+      "account_id": "acct",
+      "plan_type": "prolite",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window": {
+          "used_percent": 12,
+          "limit_window_seconds": 604800,
+          "reset_after_seconds": 547360,
+          "reset_at": 1784705126
+        },
+        "secondary_window": null
+      },
+      "additional_rate_limits": []
+    }
+    """
+
+    let snapshot = try CodexUsageService.decodeSnapshot(
+        from: Data(json.utf8),
+        fetchedAt: Date(timeIntervalSince1970: 100)
+    )
+
+    #expect(snapshot.windows.count == 1)
+    #expect(snapshot.window(kind: .fiveHour) == nil)
+    #expect(snapshot.window(kind: .sevenDay)?.usedPercent == 12)
+    #expect(snapshot.window(kind: .sevenDay)?.remainingPercent == 88)
 }
 
 @Test

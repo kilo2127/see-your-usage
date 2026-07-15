@@ -2,13 +2,15 @@
 
 Minimal, safe, low-energy macOS menu bar app for watching your Codex usage.
 
-It shows the 5-hour and 7-day Codex windows directly in the menu bar, with a compact glassy dashboard on click. It is a native AppKit app: no Electron, no WebView, no background terminal, and no busy polling.
+It shows the usage window currently returned by Codex directly in the menu bar, with a compact glassy dashboard on click. Current accounts use a weekly window; the app also adapts automatically if Codex returns a short-term window. It is a native AppKit app: no Electron, no WebView, no background terminal, and no busy polling.
 
 ## Preview
 
 ![Menu bar usage view](docs/images/menu-bar.png)
 
 ![Popover dashboard](docs/images/dashboard.png)
+
+The menu bar preview shows the current weekly-only layout. The dashboard image shows the earlier two-window response; weekly-only accounts automatically collapse it to one card.
 
 ## Quick Start
 
@@ -28,7 +30,7 @@ That builds the app, installs it to `~/Applications/see-your-usage.app`, and sta
 
 ## Features
 
-- Two-line menu bar display for `5h` and `7d`.
+- Automatically adapts to the usage windows returned by Codex, including the current weekly-only layout.
 - Dot usage bars with green/yellow/red remaining-capacity color.
 - Reset time/date shown beside each window.
 - Glass-style popover dashboard with manual refresh and pause/resume.

@@ -23,7 +23,7 @@ public struct CodexUsageService: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Codex Desktop", forHTTPHeaderField: "Originator")
         request.setValue("en", forHTTPHeaderField: "OAI-Language")
-        request.setValue("MindYourUsage/0.1", forHTTPHeaderField: "User-Agent")
+        request.setValue("see-your-usage/0.1", forHTTPHeaderField: "User-Agent")
         if let accountID = credentials.accountID, !accountID.isEmpty {
             request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-ID")
         }
@@ -74,7 +74,7 @@ public struct CodexUsageService: Sendable {
             fetchedAt: fetchedAt,
             accountID: response.accountID,
             planType: response.planType,
-            windows: windows.sorted { $0.kind.rawValue < $1.kind.rawValue },
+            windows: windows.sorted { $0.kind.displayOrder < $1.kind.displayOrder },
             additionalLimits: additionalLimits,
             credits: credits,
             resetCreditsAvailable: response.rateLimitResetCredits?.availableCount
@@ -86,38 +86,32 @@ public struct CodexUsageService: Sendable {
         guard !rawWindows.isEmpty else { return [] }
 
         var output: [UsageWindow] = []
-        var consumedIndexes = Set<Int>()
+        var consumedKinds = Set<UsageWindow.Kind>()
 
-        for kind in [UsageWindow.Kind.fiveHour, .sevenDay] {
-            guard let match = bestMatch(for: kind, in: rawWindows, excluding: consumedIndexes) else {
+        for rawWindow in rawWindows {
+            guard let windowSeconds = rawWindow.limitWindowSeconds,
+                  let kind = kind(forWindowSeconds: windowSeconds),
+                  !consumedKinds.contains(kind) else {
                 continue
             }
-            consumedIndexes.insert(match.index)
+            consumedKinds.insert(kind)
             output.append(UsageWindow(
                 kind: kind,
-                usedPercent: match.window.usedPercent ?? 0,
-                windowSeconds: TimeInterval(match.window.limitWindowSeconds ?? Int(kind.targetSeconds)),
-                resetAt: match.window.resetAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
-                resetAfterSeconds: match.window.resetAfterSeconds.map(TimeInterval.init)
+                usedPercent: rawWindow.usedPercent ?? 0,
+                windowSeconds: TimeInterval(windowSeconds),
+                resetAt: rawWindow.resetAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+                resetAfterSeconds: rawWindow.resetAfterSeconds.map(TimeInterval.init)
             ))
         }
 
         return output
     }
 
-    private static func bestMatch(
-        for kind: UsageWindow.Kind,
-        in windows: [RateLimitWindow],
-        excluding consumed: Set<Int>
-    ) -> (index: Int, window: RateLimitWindow)? {
-        windows.enumerated()
-            .filter { !consumed.contains($0.offset) }
-            .min { lhs, rhs in
-                let lhsDelta = abs(Double(lhs.element.limitWindowSeconds ?? 0) - kind.targetSeconds)
-                let rhsDelta = abs(Double(rhs.element.limitWindowSeconds ?? 0) - kind.targetSeconds)
-                return lhsDelta < rhsDelta
-            }
-            .map { ($0.offset, $0.element) }
+    private static func kind(forWindowSeconds seconds: Int) -> UsageWindow.Kind? {
+        UsageWindow.Kind.allCases.first { kind in
+            let tolerance = max(60, kind.targetSeconds * 0.05)
+            return abs(TimeInterval(seconds) - kind.targetSeconds) <= tolerance
+        }
     }
 }
 

@@ -3,23 +3,23 @@
 import PackageDescription
 
 let package = Package(
-    name: "MindYourUsage",
+    name: "see-your-usage",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "MindYourUsage", targets: ["MindYourUsage"]),
-        .library(name: "MindYourUsageCore", targets: ["MindYourUsageCore"])
+        .executable(name: "see-your-usage", targets: ["SeeYourUsage"]),
+        .library(name: "SeeYourUsageCore", targets: ["SeeYourUsageCore"])
     ],
     targets: [
-        .target(name: "MindYourUsageCore"),
+        .target(name: "SeeYourUsageCore"),
         .executableTarget(
-            name: "MindYourUsage",
-            dependencies: ["MindYourUsageCore"]
+            name: "SeeYourUsage",
+            dependencies: ["SeeYourUsageCore"]
         ),
         .testTarget(
-            name: "MindYourUsageCoreTests",
-            dependencies: ["MindYourUsageCore"]
+            name: "SeeYourUsageCoreTests",
+            dependencies: ["SeeYourUsageCore"]
         )
     ]
 )

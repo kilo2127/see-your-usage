@@ -2,7 +2,7 @@ import AppKit
 
 @main
 @MainActor
-enum MindYourUsageApp {
+enum SeeYourUsageApp {
     private static let appDelegate = AppDelegate()
 
     static func main() {

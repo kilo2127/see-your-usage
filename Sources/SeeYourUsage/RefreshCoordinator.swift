@@ -1,5 +1,5 @@
 import Foundation
-import MindYourUsageCore
+import SeeYourUsageCore
 
 @MainActor
 final class RefreshCoordinator {

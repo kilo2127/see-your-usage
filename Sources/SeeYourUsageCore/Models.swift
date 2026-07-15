@@ -33,7 +33,7 @@ public struct UsageSnapshot: Equatable, Sendable {
 }
 
 public struct UsageWindow: Equatable, Sendable {
-    public enum Kind: String, Sendable {
+    public enum Kind: String, CaseIterable, Sendable {
         case fiveHour = "5h"
         case sevenDay = "7d"
 
@@ -41,6 +41,13 @@ public struct UsageWindow: Equatable, Sendable {
             switch self {
             case .fiveHour: return 5 * 60 * 60
             case .sevenDay: return 7 * 24 * 60 * 60
+            }
+        }
+
+        public var displayOrder: Int {
+            switch self {
+            case .fiveHour: return 0
+            case .sevenDay: return 1
             }
         }
     }

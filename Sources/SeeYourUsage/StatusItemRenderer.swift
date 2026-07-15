@@ -1,30 +1,24 @@
 import AppKit
-import MindYourUsageCore
+import SeeYourUsageCore
 
 enum StatusItemRenderer {
     static let size = NSSize(width: 153, height: 23)
 
     static func image(for state: UsageViewState, appearance: NSAppearance?) -> NSImage {
-        let snapshot = state.snapshot
-        let fiveHour = snapshot?.window(kind: .fiveHour)
-        let sevenDay = snapshot?.window(kind: .sevenDay)
+        let windows = displayedWindows(from: state.snapshot)
+        let rowPositions: [CGFloat] = windows.count > 1 ? [12.6, 2.2] : [7.4]
 
         let image = NSImage(size: size, flipped: false) { rect in
             drawBackgroundIfPaused(in: rect, isPaused: state.isPaused)
-            drawRow(
-                label: "5h",
-                window: fiveHour,
-                resetText: fiveHour.map { UsageFormatting.menuResetText(for: $0) } ?? "--",
-                y: 12.6,
-                isDimmed: state.isPaused
-            )
-            drawRow(
-                label: "7d",
-                window: sevenDay,
-                resetText: sevenDay.map { UsageFormatting.menuResetText(for: $0) } ?? "--",
-                y: 2.2,
-                isDimmed: state.isPaused
-            )
+            for (index, row) in windows.enumerated() {
+                drawRow(
+                    label: row.kind.rawValue,
+                    window: row.window,
+                    resetText: row.window.map { UsageFormatting.menuResetText(for: $0) } ?? "--",
+                    y: rowPositions[index],
+                    isDimmed: state.isPaused
+                )
+            }
 
             if state.isRefreshing {
                 drawRefreshDot()
@@ -33,6 +27,17 @@ enum StatusItemRenderer {
         }
         image.isTemplate = false
         return image
+    }
+
+    private static func displayedWindows(from snapshot: UsageSnapshot?) -> [(kind: UsageWindow.Kind, window: UsageWindow?)] {
+        guard let snapshot else {
+            return [(.sevenDay, nil)]
+        }
+
+        let windows = UsageWindow.Kind.allCases.compactMap { kind -> (UsageWindow.Kind, UsageWindow)? in
+            snapshot.window(kind: kind).map { (kind, $0) }
+        }
+        return windows.isEmpty ? [(.sevenDay, nil)] : windows
     }
 
     private static func drawBackgroundIfPaused(in rect: NSRect, isPaused: Bool) {

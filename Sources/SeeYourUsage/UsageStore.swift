@@ -1,5 +1,5 @@
 import Foundation
-import MindYourUsageCore
+import SeeYourUsageCore
 
 struct UsageViewState: Equatable {
     var snapshot: UsageSnapshot?
