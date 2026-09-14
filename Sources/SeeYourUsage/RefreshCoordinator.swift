@@ -159,7 +159,7 @@ final class RefreshCoordinator {
         if failureCount > 0 {
             interval = min(3600, pow(2, Double(min(failureCount - 1, 4))) * 300)
         } else {
-            let normal: TimeInterval = ProcessInfo.processInfo.isLowPowerModeEnabled ? 1200 : 600
+            let normal: TimeInterval = ProcessInfo.processInfo.isLowPowerModeEnabled ? 600 : 300
             var resets: [Date] = []
             if store.state.provider == .llmCenter {
                 if let next = store.state.quota?.nextReset { resets.append(next) }

@@ -73,8 +73,8 @@ It never loosens keychain permissions or falls back to plaintext token files.
 
 - AppKit; no Electron, embedded browser, helper process, telemetry or CLI subprocess.
 - One read-only LLM Center request per refresh; no log scanning or cost estimation.
-- One coalescible, one-shot timer per running service: 10 minutes normally,
-  20 minutes in Low Power Mode. No high-frequency UI timers or animation loops.
+- One coalescible, one-shot timer per running service: 5 minutes normally,
+  10 minutes in Low Power Mode. No high-frequency UI timers or animation loops.
 - Popover refreshes are deduplicated and throttled. Failures back off through
   5, 10, 20, 40, then 60 minutes. Manual refresh is throttled to 5 seconds.
 - Pause, sleep or disabling the service cancels its work. Missing login/configuration
