@@ -131,7 +131,14 @@ public enum QuotaFormatting {
     }
 
     public static func today(_ value: Decimal, compact: Bool = false) -> String {
-        value == 0 ? "Nah" : amount(value, compact: compact)
+        guard value != 0 else { return "Nah" }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 1
+        formatter.roundingMode = .down
+        return "¥" + (formatter.string(from: NSDecimalNumber(decimal: value)) ?? "—")
     }
 
     public static func timestamp(_ date: Date, format: String) -> String {

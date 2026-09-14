@@ -24,9 +24,9 @@ import Testing
     controller.view.layoutSubtreeIfNeeded()
     let panels = controller.view.subviews.flatMap(\.subviews).compactMap { $0 as? UsagePanelView }
     #expect(panels.count == 2)
-    #expect(panels.first?.quotaAmount == "¥5,820")
-    #expect(panels.last?.quotaAmount == "¥86")
-    #expect(panels.last?.quotaCaption == "今日 00:00 至今")
+    #expect(panels.first?.quotaAmount == "¥86.4")
+    #expect(panels.last?.quotaAmount == "¥5,820")
+    #expect(panels.first?.quotaCaption == "今日 00:00 至今")
     #expect(StatusItemRenderer.size(for: store.state).width < 52)
     func verify(_ view: NSView) {
         for child in view.subviews where !child.isHidden {

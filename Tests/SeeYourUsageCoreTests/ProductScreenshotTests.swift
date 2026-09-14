@@ -16,7 +16,7 @@ import Testing
     let iso = ISO8601DateFormatter()
     let payload: [String: Any] = ["code": 200, "data": [
         "hasDept": true, "monthlyLimit": "7000", "monthlyUsed": "1180",
-        "monthlyRemaining": "5820", "todayUsed": "0",
+        "monthlyRemaining": "5820", "todayUsed": "86.4",
         "refreshTime": iso.string(from: now), "nextResetTime": iso.string(from: reset)
     ]]
     let llm = UsageStore(initialState: UsageViewState(provider: .llmCenter))

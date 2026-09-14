@@ -323,24 +323,24 @@ final class DashboardViewController: NSViewController {
         sevenDayPanel.isHidden = false
         fiveHourPanel.isQuota = true
         sevenDayPanel.isQuota = true
-        fiveHourPanel.isToday = false
-        sevenDayPanel.isToday = true
-        panelHeights[0].constant = 118
-        panelHeights[1].constant = 78
-        fiveHourPanel.title = "本月剩余"
-        sevenDayPanel.title = "今日已用"
-        fiveHourPanel.quotaAmount = quota.flatMap { $0.isCurrentMonth() ? QuotaFormatting.amount($0.monthlyRemaining) : nil }
-        sevenDayPanel.quotaAmount = quota.flatMap { $0.isCurrentDay() ? QuotaFormatting.today($0.todayUsed) : nil }
-        fiveHourPanel.monthlyRemaining = quota.flatMap { $0.isCurrentMonth() ? $0.monthlyRemaining : nil }
-        fiveHourPanel.quotaPercent = quota.flatMap { $0.isCurrentMonth() ? $0.remainingPercent : nil }
-        fiveHourPanel.quotaCaption = quota.map {
+        fiveHourPanel.isToday = true
+        sevenDayPanel.isToday = false
+        panelHeights[0].constant = 78
+        panelHeights[1].constant = 118
+        fiveHourPanel.title = "今日已用"
+        sevenDayPanel.title = "本月剩余"
+        fiveHourPanel.quotaAmount = quota.flatMap { $0.isCurrentDay() ? QuotaFormatting.today($0.todayUsed) : nil }
+        sevenDayPanel.quotaAmount = quota.flatMap { $0.isCurrentMonth() ? QuotaFormatting.amount($0.monthlyRemaining) : nil }
+        sevenDayPanel.monthlyRemaining = quota.flatMap { $0.isCurrentMonth() ? $0.monthlyRemaining : nil }
+        sevenDayPanel.quotaPercent = quota.flatMap { $0.isCurrentMonth() ? $0.remainingPercent : nil }
+        sevenDayPanel.quotaCaption = quota.map {
             $0.isCurrentMonth() ? "已用 \(QuotaFormatting.amount($0.monthlyUsed)) / 月度额度 \(QuotaFormatting.amount($0.monthlyLimit))" : "数据已跨月，等待刷新本月额度"
         } ?? "登录后显示个人月度额度"
-        fiveHourPanel.quotaFooter = quota.map {
+        sevenDayPanel.quotaFooter = quota.map {
             let reset = $0.nextReset.map { QuotaFormatting.timestamp($0, format: "M 月 d 日") + "重置" } ?? "重置时间未返回"
             return String(format: "剩余 %.1f%% · ", $0.remainingPercent) + reset
         } ?? ""
-        sevenDayPanel.quotaCaption = quota?.isCurrentDay() == false ? "已跨日，等待刷新今日用量" : "今日 00:00 至今"
+        fiveHourPanel.quotaCaption = quota?.isCurrentDay() == false ? "已跨日，等待刷新今日用量" : "今日 00:00 至今"
         for panel in [fiveHourPanel, sevenDayPanel] {
             panel.setAccessibilityElement(true)
             panel.setAccessibilityRole(.staticText)

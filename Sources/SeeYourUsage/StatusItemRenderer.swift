@@ -14,7 +14,7 @@ enum StatusItemRenderer {
         }
         if state.menuPrompt != nil { return NSSize(width: 58, height: 23) }
         let values = [state.quota.map { QuotaFormatting.amount($0.monthlyRemaining, compact: true) } ?? "待更新",
-                      state.quota.map { QuotaFormatting.today($0.todayUsed, compact: true) } ?? "待更新"]
+                      state.quota.map { QuotaFormatting.today($0.todayUsed) } ?? "待更新"]
         let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
         let width = values.map { $0.size(withAttributes: [.font: font]).width }.max() ?? 36
         return NSSize(width: ceil(width) + 4, height: 23)
@@ -50,7 +50,7 @@ enum StatusItemRenderer {
         let stale = state.errorMessage != nil || state.isPaused
         let image = NSImage(size: size, flipped: false) { _ in
             let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .center
+            paragraph.alignment = .right
             if let prompt = state.menuPrompt {
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 10, weight: .medium),
@@ -62,7 +62,7 @@ enum StatusItemRenderer {
                 return true
             }
             let values = [quota.flatMap { $0.isCurrentMonth() ? QuotaFormatting.amount($0.monthlyRemaining, compact: true) : nil },
-                          quota.flatMap { $0.isCurrentDay() ? QuotaFormatting.today($0.todayUsed, compact: true) : nil }]
+                          quota.flatMap { $0.isCurrentDay() ? QuotaFormatting.today($0.todayUsed) : nil }]
             for index in 0..<2 {
                 let color: NSColor = index == 0 && quota != nil && !stale
                     ? UsageColors.accent(forMonthlyRemaining: quota!.monthlyRemaining) : .labelColor

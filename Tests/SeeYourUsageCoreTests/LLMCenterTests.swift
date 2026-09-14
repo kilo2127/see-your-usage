@@ -70,7 +70,7 @@ final class LLMCenterTests: XCTestCase {
         XCTAssertEqual(QuotaFormatting.amount(0), "¥0")
         XCTAssertEqual(QuotaFormatting.today(0), "Nah")
         XCTAssertEqual(QuotaFormatting.today(0, compact: true), "Nah")
-        XCTAssertEqual(QuotaFormatting.today(Decimal(string: "0.9")!), "¥0")
+        XCTAssertEqual(QuotaFormatting.today(Decimal(string: "0.99")!), "¥0.9")
         XCTAssertEqual(QuotaFormatting.amount(Decimal(string: "6044.99")!), "¥6,044")
     }
 }

@@ -5,23 +5,11 @@ The two services are displayed and refreshed independently in one process.
 
 ## Preview
 
-Native AppKit renders with **synthetic example data**, not a live account.
+Product illustrations with example data and simplified controls.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/menu-bar-dark.png">
-  <img src="docs/images/menu-bar-light.png" alt="Compact Codex bar and reset date beside the two-row LLM Center balance and Nah display">
-</picture>
+<img src="docs/images/codex-illustration.png" width="760" alt="Codex illustration: compact menu bar indicator and weekly remaining quota">
 
-<p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/codex-dark.png">
-    <img src="docs/images/codex-light.png" width="320" alt="Codex popover with weekly remaining capacity and independent service switches">
-  </picture>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/llm-center-dark.png">
-    <img src="docs/images/llm-center-light.png" width="320" alt="LLM Center popover with monthly balance, Nah for zero daily usage, and independent service switches">
-  </picture>
-</p>
+<img src="docs/images/llm-center-illustration.png" width="760" alt="LLM Center illustration: right-aligned menu bar amounts, with today's spending above monthly remaining in the popover">
 
 ## Menu bar
 
@@ -30,11 +18,14 @@ Native AppKit renders with **synthetic example data**, not a live account.
   use one row; full window names remain in the popover.
 - **LLM Center** uses two unlabeled rows: personal monthly remaining amount above,
   today's spending below. Width follows the text instead of reserving a wide slot.
-- Money uses `¥`, with decimals truncated, never rounded. Actual zero spending today
+- Money uses `¥`: monthly amounts are integers and today's spending has one decimal,
+  truncated rather than rounded. Actual zero spending today
   displays `Nah`. Large menu values use `万`; the popover shows the full integer.
 - LLM Center monthly remaining amounts below 3,000 turn yellow; below 1,000 turn red.
   At 3,000 the color is green; at 1,000 it is yellow. These are the same system colors
   used by Codex. Codex's percentage thresholds are unchanged.
+
+In the expanded LLM Center popover, today's usage is shown above monthly remaining.
 
 ## Independent service settings
 
@@ -100,7 +91,9 @@ layout snapshots using synthetic test fixtures:
 SEE_USAGE_QA_DIR="$PWD/.build/qa" swift test
 ```
 
-To regenerate the public product images from synthetic state:
+The README illustrations are drawn in
+[HTML/CSS](docs/design/product-previews.html). To regenerate the separate native
+UI captures from synthetic state:
 
 ```sh
 SEE_USAGE_PRODUCT_DIR="$PWD/docs/images" swift test --filter renderProductScreenshots
