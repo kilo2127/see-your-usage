@@ -13,6 +13,13 @@ final class UsagePanelView: NSView {
     var usageWindow: UsageWindow? {
         didSet { needsDisplay = true }
     }
+    var quotaAmount: String? { didSet { needsDisplay = true } }
+    var quotaCaption = "" { didSet { needsDisplay = true } }
+    var quotaFooter = "" { didSet { needsDisplay = true } }
+    var monthlyRemaining: Decimal? { didSet { needsDisplay = true } }
+    var quotaPercent: Double? { didSet { needsDisplay = true } }
+    var isQuota = false { didSet { needsDisplay = true } }
+    var isToday = false { didSet { needsDisplay = true } }
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: 320, height: 86)
@@ -61,6 +68,7 @@ final class UsagePanelView: NSView {
     }
 
     private func drawText(in rect: NSRect) {
+        if isQuota { drawQuotaText(in: rect); return }
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
             .foregroundColor: NSColor.labelColor
@@ -90,13 +98,14 @@ final class UsagePanelView: NSView {
     }
 
     private func drawBar(in rect: NSRect) {
-        let barRect = NSRect(x: 14, y: 16, width: rect.width - 28, height: 12)
+        if isQuota && isToday { return }
+        let barRect = NSRect(x: 14, y: isQuota ? 32 : 16, width: rect.width - 28, height: isQuota ? 9 : 12)
         let cellCount = 18
         let gap: CGFloat = 3
         let cellWidth = (barRect.width - gap * CGFloat(cellCount - 1)) / CGFloat(cellCount)
-        let remainingPercent = usageWindow?.remainingPercent ?? 0
+        let remainingPercent = isQuota ? (quotaPercent ?? 0) : (usageWindow?.remainingPercent ?? 0)
         let litCells = Int(round((remainingPercent / 100) * Double(cellCount)))
-        let liveColor = UsageColors.accent(forRemainingPercent: remainingPercent)
+        let liveColor = isQuota ? monthlyRemaining.map { UsageColors.accent(forMonthlyRemaining: $0) } ?? .secondaryLabelColor : UsageColors.accent(forRemainingPercent: remainingPercent)
         let usedColor = NSColor.labelColor.withAlphaComponent(0.13)
 
         for index in 0..<cellCount {
@@ -106,6 +115,27 @@ final class UsagePanelView: NSView {
             (index < litCells ? liveColor : usedColor).setFill()
             path.fill()
         }
+    }
+
+    private func drawQuotaText(in rect: NSRect) {
+        title.draw(at: NSPoint(x: 14, y: rect.height - 31), withAttributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor])
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .right
+        let color = isToday ? NSColor.labelColor : monthlyRemaining.map { UsageColors.accent(forMonthlyRemaining: $0) } ?? .labelColor
+        let amount = quotaAmount ?? "—"
+        var font = NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .semibold)
+        while amount.size(withAttributes: [.font: font]).width > rect.width - 99 && font.pointSize > 14 {
+            font = .monospacedDigitSystemFont(ofSize: font.pointSize - 1, weight: .semibold)
+        }
+        amount.draw(in: NSRect(x: 85, y: rect.height - 37, width: rect.width - 99, height: 31), withAttributes: [
+            .font: font,
+            .foregroundColor: color, .paragraphStyle: paragraph])
+        let captionParagraph = NSMutableParagraphStyle()
+        captionParagraph.lineBreakMode = .byTruncatingMiddle
+        let captionStyle: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: captionParagraph]
+        quotaCaption.draw(in: NSRect(x: 14, y: rect.height - 55, width: rect.width - 28, height: 15), withAttributes: captionStyle)
+        if !isToday { quotaFooter.draw(at: NSPoint(x: 14, y: 12), withAttributes: captionStyle) }
     }
 
 }

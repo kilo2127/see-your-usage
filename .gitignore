@@ -2,3 +2,19 @@
 .DS_Store
 Assets/AppIcon.icns
 Assets/AppIcon.iconset/
+
+# Local credentials, configuration and diagnostic exports
+.env
+.env.*
+!.env.example
+auth.json
+config.local.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.mobileprovision
+*.log
+*.har
+local/
+private/

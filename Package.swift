@@ -19,7 +19,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SeeYourUsageCoreTests",
-            dependencies: ["SeeYourUsageCore"]
+            dependencies: ["SeeYourUsageCore", "SeeYourUsage"]
         )
     ]
 )
