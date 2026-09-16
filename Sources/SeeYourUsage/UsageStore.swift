@@ -19,12 +19,19 @@ struct UsageViewState: Equatable {
     var isLoggingIn = false
     var loginMessage: String?
 
+    var showsLoginAction: Bool {
+        provider == .llmCenter && (needsConfiguration || needsLogin || isLoggingIn ||
+            (quota == nil && errorMessage == nil && !isRefreshing))
+    }
+
     var menuPrompt: (String, String)? {
         guard provider == .llmCenter else { return nil }
         if needsConfiguration { return ("配置", "LLM Center") }
         if isLoggingIn { return ("正在登录", "LLM Center") }
         if quota == nil && isRefreshing { return ("连接中", "LLM Center") }
-        if quota == nil || needsLogin || errorMessage != nil { return ("登录", "LLM Center") }
+        if needsLogin { return ("登录", "LLM Center") }
+        if errorMessage != nil { return ("未更新", "LLM Center") }
+        if quota == nil { return ("登录", "LLM Center") }
         return nil
     }
 
@@ -73,7 +80,9 @@ final class UsageStore {
     func setError(_ error: Error) {
         state.needsConfiguration = (error as? LLMCenterError) == .configurationRequired
         state.keychainBlocked = (error as? LLMCenterError) == .keychainUnavailable
-        state.needsLogin = (error as? LLMCenterError) == .loginRequired || state.keychainBlocked
+        state.needsLogin = state.keychainBlocked || (error as? LLMCenterError).map {
+            [LLMCenterError.loginRequired, .loginExpired, .browserAutomationRequired, .browserTabMissing].contains($0)
+        } == true
         if state.provider == .llmCenter, error is URLError {
             state.errorMessage = "暂时无法连接平台，请检查公司内网。保留上次数据。"
         } else {

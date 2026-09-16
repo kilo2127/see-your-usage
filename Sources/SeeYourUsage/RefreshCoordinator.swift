@@ -1,31 +1,31 @@
 import AppKit
+import OSLog
 import SeeYourUsageCore
 
 @MainActor
 final class RefreshCoordinator {
     private let store: UsageStore
     private let service: CodexUsageService
-    private let llmService = LLMCenterService()
+    private let llmService: LLMCenterService
     private var timer: Timer?
     private var requestTask: Task<Void, Never>?
     private var loginTask: Task<Void, Never>?
+    private let logger = Logger(subsystem: "com.leung.see-your-usage", category: "Login")
     private var failureCount = 0
     private var lastAttempt: Date?
     private var nextAttempt: Date?
     private var sleeping = false
     private var generation = UUID()
 
-    init(store: UsageStore, service: CodexUsageService = CodexUsageService()) {
+    init(store: UsageStore, service: CodexUsageService = CodexUsageService(), llmService: LLMCenterService = LLMCenterService()) {
         self.store = store
         self.service = service
+        self.llmService = llmService
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(willSleep), name: NSWorkspace.willSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
     }
 
-    private var mayAutoLogin = false
-
     func start() {
-        mayAutoLogin = store.state.provider == .llmCenter
         refreshNow()
     }
 
@@ -56,43 +56,59 @@ final class RefreshCoordinator {
         }
     }
 
-    func login() {
+    enum LoginSource: String { case dashboard, statusMenu }
+
+    func login(source: LoginSource) {
         if store.state.isLoggingIn { cancelLogin(); return }
         guard store.state.provider == .llmCenter else { return }
         cancelRequests()
         timer?.invalidate()
         timer = nil
-        store.setLogin(active: true, message: "正在打开浏览器授权…")
+        guard LLMCenterConfiguration.baseURL != nil else {
+            store.setError(LLMCenterError.configurationRequired)
+            return
+        }
+        logger.notice("Browser authorization requested: \(source.rawValue, privacy: .public)")
+        store.setLogin(active: true, message: "正在打开 Safari…")
         loginTask = Task {
             do {
                 let login = try await llmService.beginLogin()
+                let previousURL = try? await llmService.authentication.browserAuthorizationURL(origin: login.origin)
                 try Task.checkCancellation()
-                guard NSWorkspace.shared.open(login.url) else { throw LLMCenterError.unsafeURL }
-                store.setLogin(active: true, message: "请在浏览器完成授权；可点击取消。")
-                while !Task.isCancelled {
-                    try await Task.sleep(for: .seconds(login.pollInterval))
-                    if let token = try await llmService.pollLogin(login) {
-                        try Task.checkCancellation()
-                        let saved = try llmService.tokens.save(token)
-                        store.clearQuota()
-                        store.setLogin(active: false, message: saved ? nil : "本次已登录；凭证未保存，重启后需重新登录。")
-                        failureCount = 0
-                        lastAttempt = nil
-                        loginTask = nil
-                        refreshNow()
-                        return
-                    }
-                }
-            } catch {
+                let linked = try await SafariLogin.open(login.url, previousURL: previousURL)
+                logger.notice("Safari authorization page opened")
+                store.setLogin(active: true, message: "等待 Safari 授权…")
+                let quota = try await llmService.completeBrowserLogin(login, keepAuthorizationTab: linked)
+                try Task.checkCancellation()
+                let saved = await llmService.authentication.credentialsArePersistent
+                try Task.checkCancellation()
+                store.setLogin(active: false, message: !saved ? "本次已登录；凭证未保存，重启后需重新登录。" :
+                    (linked ? nil : "已登录；Safari 自动续期未启用。"))
+                store.setQuota(quota)
+                failureCount = 0
+                lastAttempt = Date()
+                loginTask = nil
+                logger.notice("Browser authorization completed; persistent: \(saved, privacy: .public)")
+                scheduleNextRefresh()
+                return
+            } catch is CancellationError {
                 guard !Task.isCancelled else { return }
                 store.setLogin(active: false)
+                scheduleNextRefresh()
+            } catch {
+                guard !Task.isCancelled else { return }
+                logger.notice("Browser authorization failed")
+                store.setLogin(active: false)
                 store.setError(error)
+                failureCount += 1
+                scheduleNextRefresh()
             }
             loginTask = nil
         }
     }
 
     func cancelLogin() {
+        if loginTask != nil { logger.notice("Browser authorization cancelled") }
         loginTask?.cancel()
         loginTask = nil
         store.setLogin(active: false)
@@ -126,9 +142,18 @@ final class RefreshCoordinator {
         requestTask = Task {
             do {
                 if provider == .llmCenter {
-                    let quota = try await llmService.fetchUsage()
+                    let logger = self.logger
+                    let quota = try await llmService.fetchUsage(reconnect: { previous, next in
+                        logger.notice("Safari session renewal requested after authentication rejection")
+                        try await SafariLogin.reconnect(previousURL: previous, authorizationURL: next)
+                        logger.notice("Temporary Safari authorization tab opened in background")
+                    }, finishReconnect: { url in
+                        await SafariLogin.finishReconnect(authorizationURL: url)
+                        logger.notice("Temporary Safari authorization cleanup finished")
+                    })
                     guard !Task.isCancelled, current == generation else { return }
                     store.setQuota(quota)
+                    logger.notice("LLM quota refresh succeeded")
                 } else {
                     let snapshot = try await service.fetchUsage()
                     guard !Task.isCancelled, current == generation else { return }
@@ -138,15 +163,24 @@ final class RefreshCoordinator {
             } catch {
                 guard !Task.isCancelled, current == generation else { return }
                 failureCount += 1
+                if provider == .llmCenter {
+                    let reason: String
+                    switch error as? LLMCenterError {
+                    case .loginRequired: reason = "login_required"
+                    case .loginExpired: reason = "browser_authorization_expired"
+                    case .browserAutomationRequired: reason = "safari_permission_missing"
+                    case .browserTabMissing: reason = "safari_tab_missing"
+                    case .http(let status): reason = "http_\(status)"
+                    default: reason = "request_failed"
+                    }
+                    logger.error("LLM refresh failed: \(reason, privacy: .public)")
+                }
                 store.setError(error)
             }
             requestTask = nil
             store.setRefreshing(false)
-            // Try existing credentials first. Open authorization only once per launch,
-            // and only for an authentication failure, never repeatedly on a VPN outage.
-            let autoLogin = mayAutoLogin && store.state.needsLogin && !store.state.keychainBlocked
-            mayAutoLogin = false
-            if autoLogin { login() } else { scheduleNextRefresh() }
+            // Authentication failures stop scheduling until the user reconnects.
+            scheduleNextRefresh()
         }
     }
 

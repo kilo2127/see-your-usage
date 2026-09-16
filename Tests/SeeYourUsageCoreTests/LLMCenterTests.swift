@@ -44,6 +44,12 @@ final class LLMCenterTests: XCTestCase {
         }
     }
 
+    func testForbiddenDoesNotRequireLogin() {
+        XCTAssertThrowsError(try LLMQuotaSnapshot.decode(Data(#"{"code":403}"#.utf8))) {
+            XCTAssertEqual($0 as? LLMCenterError, .forbidden)
+        }
+    }
+
     func testBeijingMidnightInvalidatesTodayButNotMonth() throws {
         let quota = try LLMQuotaSnapshot.decode(data())
         let iso = ISO8601DateFormatter()

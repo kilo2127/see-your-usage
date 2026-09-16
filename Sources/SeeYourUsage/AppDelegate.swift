@@ -167,7 +167,7 @@ final class UsageMenuItemController: NSObject, NSPopoverDelegate {
             label.isEnabled = false
             menu.addItem(label)
             if store.state.provider == .llmCenter {
-                let login = NSMenuItem(title: "登录 / 切换 LLM Center 账号…", action: #selector(loginLLM), keyEquivalent: "")
+                let login = NSMenuItem(title: "在 Safari 中登录 LLM Center…", action: #selector(loginLLM), keyEquivalent: "")
                 login.target = self
                 menu.addItem(login)
             }
@@ -197,7 +197,7 @@ final class UsageMenuItemController: NSObject, NSPopoverDelegate {
 
     @objc private func refreshUsage() { coordinator.refreshNow() }
 
-    @objc private func loginLLM() { coordinator.login() }
+    @objc private func loginLLM() { coordinator.login(source: .statusMenu) }
 
     private func closePopover() {
         popover.performClose(nil)

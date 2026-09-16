@@ -48,6 +48,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Open a temporary background authorization tab in an existing Safari window to renew your LLM Center session. The app does not read cookies or passwords.</string>
 </dict>
 </plist>
 PLIST

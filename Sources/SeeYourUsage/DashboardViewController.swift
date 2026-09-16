@@ -9,7 +9,7 @@ final class DashboardViewController: NSViewController {
 
     static func preferredContentSize(for state: UsageViewState) -> NSSize {
         if state.provider == .llmCenter {
-            let login = state.needsLogin || state.isLoggingIn || state.quota == nil || state.errorMessage != nil
+            let login = state.showsLoginAction
             return NSSize(width: contentWidth, height: 450 + (login ? 40 : 0) + (state.errorMessage != nil || state.quota?.hasTeam == false ? 40 : 0))
         }
         let windowCount = state.snapshot?.windows.count ?? 1
@@ -258,8 +258,8 @@ final class DashboardViewController: NSViewController {
         addressButton.isHidden = store.state.provider != .llmCenter
         titleLabel.stringValue = state.provider == .llmCenter ? "LLM Center" : "see-your-usage"
         platformButton.title = state.provider == .llmCenter ? "打开 LLM Center ↗" : "打开 Codex 用量 ↗"
-        loginButton.isHidden = state.provider != .llmCenter || !(state.needsLogin || state.isLoggingIn || state.quota == nil || state.errorMessage != nil)
-        loginButton.title = state.needsConfiguration ? "设置平台地址" : (state.isLoggingIn ? "取消登录" : "登录 LLM Center")
+        loginButton.isHidden = !state.showsLoginAction
+        loginButton.title = state.needsConfiguration ? "设置平台地址" : (state.isLoggingIn ? "取消登录" : "在 Safari 中登录")
         if state.provider == .llmCenter { renderQuota(state); return }
         detailsLabel.isHidden = false
         for (index, panel) in [fiveHourPanel, sevenDayPanel].enumerated() {
@@ -355,7 +355,7 @@ final class DashboardViewController: NSViewController {
     }
 
     @objc private func login() {
-        if store.state.needsConfiguration { configurePlatform() } else { coordinator.login() }
+        if store.state.needsConfiguration { configurePlatform() } else { coordinator.login(source: .dashboard) }
     }
 
     @objc private func openPlatform() {
