@@ -35,15 +35,64 @@ private struct LLMDeviceSession: Codable {
 public actor LLMAuthentication {
     private let session: URLSession
     private let store: LLMTokenStore
+    private let nativeStore: LLMTokenStore?
     private var renewal: (id: UUID, origin: String, task: Task<LLMRenewableSession, Error>)?
     private var persistenceFailed = false
 
-    public init(session: URLSession, store: LLMTokenStore = LLMTokenStore(accountPrefix: "oidcSession@")) {
+    public init(session: URLSession, store: LLMTokenStore = LLMTokenStore(accountPrefix: "oidcSession@"),
+                nativeStore: LLMTokenStore? = nil) {
         self.session = session
         self.store = store
+        self.nativeStore = nativeStore
     }
 
     public var credentialsArePersistent: Bool { !persistenceFailed }
+
+    private func savedStore(origin: String) throws -> LLMTokenStore {
+        if let nativeStore {
+            do { _ = try nativeStore.load(expectedOrigin: origin); return nativeStore }
+            catch LLMCenterError.loginRequired { }
+        }
+        return store
+    }
+
+    // Only the code obtained for this local PKCE session is exchanged. Nothing
+    // is persisted until the caller validates the resulting token with quota.
+    func exchangeAuthorizationCode(_ code: String, login: LLMCenterService.LoginSession) async throws -> LLMRenewableSession? {
+        guard let pkce = login.pkce else { return nil }
+        guard !code.isEmpty, Date() < login.expiresAt else { throw LLMCenterError.loginExpired }
+        try Task.checkCancellation()
+        var request = URLRequest(url: pkce.tokenEndpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = Self.form(["grant_type": "authorization_code", "client_id": pkce.clientID,
+            "redirect_uri": pkce.redirectURI.absoluteString, "code": code, "code_verifier": pkce.verifier])
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse else { throw LLMCenterError.invalidResponse }
+        if response.statusCode == 400 || response.statusCode == 401 {
+            let error = try? JSONDecoder().decode(OAuthError.self, from: data)
+            if error?.error == "invalid_grant" { throw LLMCenterError.loginExpired }
+            if error?.error == "invalid_client" || response.statusCode == 401 { throw LLMCenterError.loginRequired }
+        }
+        guard response.statusCode == 200 else { throw LLMCenterError.http(response.statusCode) }
+        guard let tokens = try? JSONDecoder().decode(TokenResponse.self, from: data),
+              !tokens.access_token.isEmpty, let refresh = tokens.refresh_token, !refresh.isEmpty,
+              tokens.expires_in.isFinite, tokens.expires_in > 0, tokens.token_type.lowercased() == "bearer" else {
+            throw LLMCenterError.invalidResponse
+        }
+        return LLMRenewableSession(origin: login.origin, issuer: pkce.issuer,
+            tokenEndpoint: pkce.tokenEndpoint, clientID: pkce.clientID,
+            accessToken: tokens.access_token, refreshToken: refresh,
+            expiresAt: Date().addingTimeInterval(tokens.expires_in))
+    }
+
+    func acceptValidatedSession(_ value: LLMRenewableSession) async throws {
+        if let renewal { _ = try? await renewal.task.value }
+        try Task.checkCancellation()
+        let encoded = try JSONEncoder().encode(value)
+        persistenceFailed = try !(nativeStore ?? store).save(String(decoding: encoded, as: UTF8.self), expectedOrigin: value.origin)
+    }
 
     public func acceptBrowserToken(_ token: String, origin: String, authorizationURL: URL? = nil) async throws {
         // Finish any rotating grant before replacing the selected account.
@@ -55,11 +104,11 @@ public actor LLMAuthentication {
                   authorizationURL.fragment == nil else { throw LLMCenterError.unsafeURL }
         }
         let encoded = try JSONEncoder().encode(LLMDeviceSession(origin: origin, webToken: token, authorizationURL: authorizationURL))
-        persistenceFailed = try !store.save(String(decoding: encoded, as: UTF8.self), expectedOrigin: origin)
+        persistenceFailed = try !(nativeStore ?? store).save(String(decoding: encoded, as: UTF8.self), expectedOrigin: origin)
     }
 
     public func browserAuthorizationURL(origin: String) throws -> URL? {
-        let raw = try store.load(expectedOrigin: origin)
+        let raw = try savedStore(origin: origin).load(expectedOrigin: origin)
         guard let browser = try? JSONDecoder().decode(LLMDeviceSession.self, from: Data(raw.utf8)),
               browser.origin == origin, let url = browser.authorizationURL,
               let platform = URL(string: origin), Self.sameOrigin(platform, url), url.fragment == nil else { return nil }
@@ -71,6 +120,7 @@ public actor LLMAuthentication {
         guard let platform = URL(string: origin), Self.sameOrigin(platform, nextURL), nextURL.fragment == nil else {
             throw LLMCenterError.unsafeURL
         }
+        let store = try savedStore(origin: origin)
         let raw = try store.load(expectedOrigin: origin)
         guard let current = try? JSONDecoder().decode(LLMDeviceSession.self, from: Data(raw.utf8)),
               current.origin == origin, current.authorizationURL == previousURL else { throw LLMCenterError.loginRequired }
@@ -110,10 +160,11 @@ public actor LLMAuthentication {
             accessToken: credentials.accessToken, refreshToken: credentials.refreshToken,
             expiresAt: credentials.expiresAt)
         // Exercise the real renewal grant at login so unsupported sessions fail immediately.
-        _ = try await renew(value)
+        _ = try await renew(value, store: nativeStore ?? store)
     }
 
     public func accessToken(origin: String, rejectedToken: String? = nil) async throws -> String {
+        let store = try savedStore(origin: origin)
         let raw = try store.load(expectedOrigin: origin)
         if let browser = try? JSONDecoder().decode(LLMDeviceSession.self, from: Data(raw.utf8)) {
             guard browser.origin == origin, !browser.webToken.isEmpty,
@@ -127,19 +178,18 @@ public actor LLMAuthentication {
         if value.expiresAt.timeIntervalSinceNow > 60 && rejectedToken != value.accessToken {
             return value.accessToken
         }
-        return try await renew(value).accessToken
+        return try await renew(value, store: store).accessToken
     }
 
     public func hasSession(origin: String) throws -> Bool {
-        do { _ = try store.load(expectedOrigin: origin); return true }
+        do { _ = try savedStore(origin: origin).load(expectedOrigin: origin); return true }
         catch LLMCenterError.loginRequired { return false }
     }
 
-    private func renew(_ value: LLMRenewableSession) async throws -> LLMRenewableSession {
+    private func renew(_ value: LLMRenewableSession, store: LLMTokenStore) async throws -> LLMRenewableSession {
         if let renewal, renewal.origin == value.origin { return try await renewal.task.value }
         let id = UUID()
         let session = self.session
-        let store = self.store
         // A rotating grant must finish and persist even if its quota request is cancelled.
         let task = Task { () throws -> LLMRenewableSession in
             var request = URLRequest(url: value.tokenEndpoint)

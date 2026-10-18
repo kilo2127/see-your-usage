@@ -4,7 +4,7 @@ import SeeYourUsageCore
 
 @MainActor
 enum SafariLogin {
-    static func open(_ url: URL, previousURL: URL?) async throws -> Bool {
+    static func open(_ url: URL, previousURL: URL?, linkForRenewal: Bool = true) async throws -> Bool {
         try Task.checkCancellation()
         guard let safari = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari") else {
             throw LLMCenterError.browserUnavailable
@@ -16,7 +16,7 @@ enum SafariLogin {
             if NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").isEmpty {
                 _ = try await NSWorkspace.shared.openApplication(at: safari, configuration: configuration)
             }
-            if try await SafariAuthorizationTab.shared.open(url, replacing: previousURL, interactive: true) {
+            if linkForRenewal, try await SafariAuthorizationTab.shared.open(url, replacing: previousURL, interactive: true) {
                 return true
             }
             // Permission denial still permits a one-time login through Launch Services.

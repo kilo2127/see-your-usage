@@ -7,41 +7,45 @@ internal platform. Users supply their own HTTPS origin and authenticate normally
 ## Local data
 
 - LLM Center origin: app preferences outside the repository.
-- LLM Center session: macOS Keychain, scoped to the configured origin. Existing
-  access/refresh pairs are updated together on renewal. New Safari authorizations
-  replace that record with a browser-issued web token after quota validation.
-  The linked authorization URL is stored in the same Keychain record, not preferences.
+- LLM Center session: macOS Keychain, scoped to the configured origin. Access/refresh pairs
+  are updated together on renewal. New PKCE logins use the `pkceSession@` account
+  namespace and replace a session only after quota validation. Older OIDC and
+  web-token entries remain readable when permitted by their existing ACLs. A legacy
+  browser connection URL is stored in Keychain, not preferences.
 - If Keychain is inaccessible, a fresh browser login may remain in process memory
   only. No keychain ACL changes, plaintext credential files, or token logging.
 - Codex login: read locally from the user's existing auth file, without modification.
 - Usage: held in memory. No analytics, remote collection, or request-log export.
 
 LLM Center requests are limited to personal quota retrieval, login and OIDC renewal.
-Login uses the platform's official device-authorization session and polling API.
-An explicit login can request macOS Automation permission to control Safari.
-This OS permission is broader than one tab; the implementation restricts its
-background actions to creating a temporary tab at a new same-origin authorization
-URL in an existing Safari window. Cleanup only closes a single unselected tab
-matching that attempt's unique authorization URL. User-selected, navigated or
-duplicated pages are left untouched. It does not inject JavaScript,
-enable Safari developer options, read cookies, passwords or browser refresh tokens,
-select tabs, activate Safari or create windows during background recovery.
-URLs are passed as structured Apple event arguments, never interpolated into
-executable source. Browser error dictionaries are not logged because they may contain
-URLs. The original authorization tab can be closed; background recovery depends
-on the browser's SSO session, not that tab's sessionStorage. Revoking Automation
-permission or expiry of SSO can require explicit login.
-Only explicit login may request permission, launch Safari or select a tab.
-Permission denial permits a one-time login via Launch Services. Polling is bounded
-by the authorization deadline and stops on completion, cancellation or failure.
+Login uses the platform's official session and polling API with PKCE (S256).
+A 32-byte secure random verifier remains in memory; only its SHA-256 challenge is
+sent when creating a session. Safari visits the returned OIDC authorization URL.
+The platform relays a one-time code, which the app exchanges directly for access
+and refresh tokens. The verifier, codes and tokens are never logged or written to
+plaintext files. Native renewal does not need Safari or Automation permission.
 
-Previously saved OIDC sessions retain native renewal, with an HTTPS token endpoint
-on the issuer's origin. New device-flow web tokens have no documented renewal grant;
-linked sessions recover through the official webpage, whose OIDC client owns renewal.
-Native API, discovery and renewal requests reject redirects. Login-event logs contain
-only the action source, lifecycle and persistence result, never URLs, authorization
-state, tokens or server error bodies. No issuer or company hostname is embedded in
-the application or test fixtures.
+The configured platform supplies the authorization metadata over HTTPS. The app
+requires the authorization and token endpoints to share an HTTPS origin and the
+callback to belong to the platform. It verifies state, client ID, callback,
+response type and PKCE challenge before opening the browser or exchanging a code.
+Native API, code exchange, discovery and renewal requests reject redirects.
+A failed exchange or quota validation preserves the previously saved credentials.
+Rotating refresh grants finish saving even when the caller cancels.
+
+Legacy servers and web-token sessions retain the original browser recovery path.
+Only this legacy explicit login can request Safari Automation permission.
+Background legacy recovery creates a temporary tab in an existing window, without
+selecting tabs, activating Safari, creating windows or requesting permission.
+Cleanup closes only a single unselected tab matching the attempt's unique URL.
+Selected, navigated or duplicated tabs remain untouched. URLs are structured Apple
+event arguments. The app never injects JavaScript, changes Safari settings, or
+reads browser cookies, passwords or refresh tokens. Polling stops at its deadline,
+on success, failure or cancellation.
+
+Login-event logs contain only lifecycle, safe failure categories and persistence
+results, never URLs, authorization state, tokens or server error bodies. No issuer
+or company hostname is embedded in the application or test fixtures.
 
 ## Before pushing or sharing
 
@@ -57,3 +61,7 @@ it and clean the history before publication; deleting the current file is not en
 The build uses ad-hoc local signing. A rebuilt executable can lose an earlier
 Keychain item's trust. The app suppresses authentication dialogs and requests a fresh
 browser login instead; it does not bypass macOS Keychain protections.
+Every native Keychain read or write disables legacy login-keychain interaction
+with `SecKeychainSetUserInteractionAllowed(false)` as well as using a noninteractive
+`LAContext`. Failure to apply this policy stops the operation. The app never
+re-enables interactive Keychain access.

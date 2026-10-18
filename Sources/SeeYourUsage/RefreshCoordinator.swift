@@ -75,7 +75,7 @@ final class RefreshCoordinator {
                 let login = try await llmService.beginLogin()
                 let previousURL = try? await llmService.authentication.browserAuthorizationURL(origin: login.origin)
                 try Task.checkCancellation()
-                let linked = try await SafariLogin.open(login.url, previousURL: previousURL)
+                let linked = try await SafariLogin.open(login.url, previousURL: previousURL, linkForRenewal: !login.usesNativeRenewal)
                 logger.notice("Safari authorization page opened")
                 store.setLogin(active: true, message: "等待 Safari 授权…")
                 let quota = try await llmService.completeBrowserLogin(login, keepAuthorizationTab: linked)
@@ -83,7 +83,7 @@ final class RefreshCoordinator {
                 let saved = await llmService.authentication.credentialsArePersistent
                 try Task.checkCancellation()
                 store.setLogin(active: false, message: !saved ? "本次已登录；凭证未保存，重启后需重新登录。" :
-                    (linked ? nil : "已登录；Safari 自动续期未启用。"))
+                    (login.usesNativeRenewal || linked ? nil : "已登录；Safari 自动续期未启用。"))
                 store.setQuota(quota)
                 failureCount = 0
                 lastAttempt = Date()
@@ -170,6 +170,8 @@ final class RefreshCoordinator {
                     case .loginExpired: reason = "browser_authorization_expired"
                     case .browserAutomationRequired: reason = "safari_permission_missing"
                     case .browserTabMissing: reason = "safari_tab_missing"
+                    case .clientUpgradeRequired: reason = "client_protocol_outdated"
+                    case .invalidResponse: reason = "invalid_response"
                     case .http(let status): reason = "http_\(status)"
                     default: reason = "request_failed"
                     }

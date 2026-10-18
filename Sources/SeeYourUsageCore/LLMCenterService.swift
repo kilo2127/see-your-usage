@@ -3,7 +3,7 @@ import Security
 import LocalAuthentication
 
 public enum LLMCenterError: LocalizedError, Equatable {
-    case configurationRequired, loginRequired, forbidden, renewalUnavailable, keychainUnavailable, invalidResponse, loginExpired, browserUnavailable, browserAutomationRequired, browserTabMissing, unsafeURL, keychain(Int32), http(Int)
+    case configurationRequired, loginRequired, forbidden, renewalUnavailable, keychainUnavailable, invalidResponse, clientUpgradeRequired, loginExpired, browserUnavailable, browserAutomationRequired, browserTabMissing, unsafeURL, keychain(Int32), http(Int)
 
     public var errorDescription: String? {
         switch self {
@@ -13,6 +13,7 @@ public enum LLMCenterError: LocalizedError, Equatable {
         case .renewalUnavailable: return "本次登录未提供续期凭据，请使用统一登录。"
         case .keychainUnavailable: return "旧登录信息暂不可读取，请重新登录 LLM Center。不会弹出钥匙串密码框。"
         case .invalidResponse: return "平台未返回完整额度数据，请稍后刷新。"
+        case .clientUpgradeRequired: return "平台已升级登录协议，当前客户端不兼容，需要更新应用。"
         case .loginExpired: return "登录授权已过期，请重新登录。"
         case .browserUnavailable: return "无法打开 Safari，请稍后重试。"
         case .browserAutomationRequired: return "Safari 自动续期未获授权，请重新连接 Safari。"
@@ -155,6 +156,22 @@ public enum QuotaFormatting {
     }
 }
 
+// LAContext.interactionNotAllowed does not suppress ACL prompts for the legacy
+// file-based login keychain. Disable that API's UI before every native access,
+// and fail closed if the policy cannot be applied. Never restore interactive
+// access in this background app, including after a failed operation.
+enum NoninteractiveKeychain {
+    static func perform<Result>(
+        configure: () -> OSStatus = { SecKeychainSetUserInteractionAllowed(false) },
+        failure: (OSStatus) -> Result,
+        operation: () -> Result
+    ) -> Result {
+        let status = configure()
+        guard status == errSecSuccess else { return failure(status) }
+        return operation()
+    }
+}
+
 public final class LLMTokenStore: @unchecked Sendable {
     private let lock = NSLock()
     private var cachedToken: String?
@@ -192,12 +209,20 @@ public final class LLMTokenStore: @unchecked Sendable {
 
     public convenience init(accountPrefix: String = "webToken@") {
         self.init(readItem: { query in
-            var result: CFTypeRef?
-            let status = SecItemCopyMatching(query as CFDictionary, &result)
-            return (status, result as? Data)
+            NoninteractiveKeychain.perform(failure: { ($0, nil) }) {
+                var result: CFTypeRef?
+                let status = SecItemCopyMatching(query as CFDictionary, &result)
+                return (status, result as? Data)
+            }
         }, updateItem: { query, attributes in
-            SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        }, addItem: { item in SecItemAdd(item as CFDictionary, nil) }, accountPrefix: accountPrefix)
+            NoninteractiveKeychain.perform(failure: { $0 }) {
+                SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            }
+        }, addItem: { item in
+            NoninteractiveKeychain.perform(failure: { $0 }) {
+                SecItemAdd(item as CFDictionary, nil)
+            }
+        }, accountPrefix: accountPrefix)
     }
 
     init(readItem: @escaping ([String: Any]) -> (OSStatus, Data?),
@@ -285,7 +310,7 @@ public struct LLMCenterService: Sendable {
     public let authentication: LLMAuthentication
 
     public init(session: URLSession? = nil, endpoint: URL? = nil, tokens: LLMTokenStore = LLMTokenStore(),
-                authenticationStore: LLMTokenStore = LLMTokenStore(accountPrefix: "oidcSession@")) {
+                authenticationStore: LLMTokenStore? = nil, nativeAuthenticationStore: LLMTokenStore? = nil) {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 20
@@ -295,7 +320,9 @@ public struct LLMCenterService: Sendable {
         self.session = session ?? URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
         self.tokens = tokens
         self.endpoint = endpoint
-        self.authentication = LLMAuthentication(session: self.session, store: authenticationStore)
+        self.authentication = LLMAuthentication(session: self.session,
+            store: authenticationStore ?? LLMTokenStore(accountPrefix: "oidcSession@"),
+            nativeStore: nativeAuthenticationStore ?? (authenticationStore == nil ? LLMTokenStore(accountPrefix: "pkceSession@") : nil))
     }
 
     public typealias BrowserReconnect = @Sendable (_ previousURL: URL, _ authorizationURL: URL) async throws -> Void
@@ -313,11 +340,14 @@ public struct LLMCenterService: Sendable {
             try Task.checkCancellation()
             let pending = try await beginLogin()
             let login = LoginSession(origin: pending.origin, state: pending.state, url: pending.url,
-                expiresAt: min(pending.expiresAt, Date().addingTimeInterval(45)), pollInterval: pending.pollInterval)
+                expiresAt: min(pending.expiresAt, Date().addingTimeInterval(45)), pollInterval: pending.pollInterval,
+                pkce: pending.pkce)
             do {
                 try await reconnect(previousURL, login.url)
                 try Task.checkCancellation()
-                try await authentication.trackBrowserAuthorizationURL(origin: origin, previousURL: previousURL, nextURL: login.url)
+                if !login.usesNativeRenewal {
+                    try await authentication.trackBrowserAuthorizationURL(origin: origin, previousURL: previousURL, nextURL: login.url)
+                }
                 let quota = try await completeBrowserLogin(login, keepAuthorizationTab: true)
                 await finishReconnect?(login.url)
                 return quota
@@ -353,21 +383,31 @@ public struct LLMCenterService: Sendable {
         public let url: URL
         public let expiresAt: Date
         public let pollInterval: TimeInterval
+        let pkce: LLMPKCE?
+        public var usesNativeRenewal: Bool { pkce != nil }
+
+        init(origin: String, state: String, url: URL, expiresAt: Date, pollInterval: TimeInterval, pkce: LLMPKCE? = nil) {
+            self.origin = origin; self.state = state; self.url = url
+            self.expiresAt = expiresAt; self.pollInterval = pollInterval; self.pkce = pkce
+        }
     }
 
     public func beginLogin() async throws -> LoginSession {
         guard let platform = resolvedURL else { throw LLMCenterError.configurationRequired }
         try Task.checkCancellation()
-        let state = UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
-        let result = try Self.payload(await request(path: "/llm/api/cli/auth/session", body: ["state": state], expectedOrigin: platform.absoluteString))
+        let state = "llmctl_" + UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let verifier = try LLMPKCE.makeVerifier()
+        let result = try Self.payload(await request(path: "/llm/api/cli/auth/session",
+            body: ["state": state, "codeChallenge": LLMPKCE.challenge(for: verifier)], expectedOrigin: platform.absoluteString))
         guard let address = result["authorizeUrl"] as? String,
-              let url = URL(string: address), LLMAuthentication.sameOrigin(platform, url) else { throw LLMCenterError.unsafeURL }
+              let url = URL(string: address) else { throw LLMCenterError.unsafeURL }
+        let pkce = try LLMPKCE.validated(payload: result, platform: platform, authorizationURL: url, state: state, verifier: verifier)
         let expires = (result["expiresIn"] as? NSNumber)?.doubleValue ?? 300
         let interval = (result["pollIntervalMs"] as? NSNumber)?.doubleValue ?? 2000
         guard expires.isFinite, expires > 0, interval.isFinite else { throw LLMCenterError.invalidResponse }
         try Task.checkCancellation()
         return LoginSession(origin: platform.absoluteString, state: state, url: url,
-            expiresAt: Date().addingTimeInterval(min(600, expires)), pollInterval: max(2, min(10, interval / 1000)))
+            expiresAt: Date().addingTimeInterval(min(600, expires)), pollInterval: max(2, min(10, interval / 1000)), pkce: pkce)
     }
 
     public func pollLogin(_ login: LoginSession) async throws -> String? {
@@ -376,8 +416,9 @@ public struct LLMCenterService: Sendable {
         guard Date() < login.expiresAt else { throw LLMCenterError.loginExpired }
         let result = try Self.payload(await request(path: "/llm/api/cli/auth/poll", query: [URLQueryItem(name: "state", value: login.state)], expectedOrigin: login.origin))
         switch result["status"] as? String {
-        case "completed":
-            guard let token = result["webToken"] as? String, !token.isEmpty else { throw LLMCenterError.invalidResponse }
+        case "completed", "authorized":
+            let key = login.usesNativeRenewal ? "authorizationCode" : "webToken"
+            guard let token = result[key] as? String, !token.isEmpty else { throw LLMCenterError.invalidResponse }
             return token
         case "expired", "cancelled", "denied": throw LLMCenterError.loginExpired
         case "pending", "waiting": return nil
@@ -390,11 +431,16 @@ public struct LLMCenterService: Sendable {
             try Task.checkCancellation()
             if let token = try await pollLogin(login) {
                 try Task.checkCancellation()
-                let quota = try await fetchUsage(token: token, expectedOrigin: login.origin)
+                let candidate = try await authentication.exchangeAuthorizationCode(token, login: login)
+                let quota = try await fetchUsage(token: candidate?.accessToken ?? token, expectedOrigin: login.origin)
                 try Task.checkCancellation()
                 guard resolvedURL?.absoluteString == login.origin else { throw LLMCenterError.configurationRequired }
-                try await authentication.acceptBrowserToken(token, origin: login.origin,
-                    authorizationURL: keepAuthorizationTab ? login.url : nil)
+                if let candidate {
+                    try await authentication.acceptValidatedSession(candidate)
+                } else {
+                    try await authentication.acceptBrowserToken(token, origin: login.origin,
+                        authorizationURL: keepAuthorizationTab ? login.url : nil)
+                }
                 return quota
             }
             let delay = min(login.pollInterval, login.expiresAt.timeIntervalSinceNow)
@@ -413,6 +459,9 @@ public struct LLMCenterService: Sendable {
         if !query.isEmpty { components.queryItems = query }
         var request = URLRequest(url: components.url!, cachePolicy: .reloadIgnoringLocalCacheData)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // The official session endpoint gates its PKCE wire protocol by this
+        // version tag. Identify our app too; no CLI executable is invoked.
+        request.setValue("llmctl/0.2.15 (see-your-usage; macOS)", forHTTPHeaderField: "User-Agent")
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body {
             request.httpMethod = "POST"
@@ -430,8 +479,17 @@ public struct LLMCenterService: Sendable {
     static func payload(_ data: Data) throws -> [String: Any] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw LLMCenterError.invalidResponse }
         let code = root["code"].map { String(describing: $0) }
-        if code == "401" { throw LLMCenterError.loginRequired }
+        // Match the official web client's authentication recovery codes. These
+        // can arrive inside HTTP 200 responses and must enter the renewal flow.
+        if let code, ["401", "1102", "1101", "1005", "1008", "1009", "1010", "1011", "1013", "1017", "1021"].contains(code) {
+            throw LLMCenterError.loginRequired
+        }
         if code == "403" { throw LLMCenterError.forbidden }
+        if code == "400", let message = root["message"] as? String,
+           message.contains("仅支持 llmctl"), message.contains("升级 CLI") {
+            // Show a local, actionable explanation without exposing server text.
+            throw LLMCenterError.clientUpgradeRequired
+        }
         guard root["success"] as? Bool != false,
               code == nil || code == "200" || code == "0",
               let data = root["data"] as? [String: Any] else { throw LLMCenterError.invalidResponse }

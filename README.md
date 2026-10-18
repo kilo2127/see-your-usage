@@ -50,43 +50,41 @@ repository. An unconfigured installation makes no requests to an internal platfo
 
 On launch, configured instances try saved credentials without opening a browser.
 Choose **在 Safari 中登录** when authorization is needed. The app opens the
-platform's official browser-authorization page in Safari. During this explicit
-login, macOS asks permission to control Safari so the app can open a temporary
-background authorization tab later. It does not enable JavaScript from Apple Events or change
-Safari preferences. Denying permission still allows a one-time browser login.
-No CLI is required. Ordinary network failures show **未更新 / LLM Center** without
-a sign-in button.
+platform's official OIDC authorization page in Safari and uses PKCE (S256).
+The platform relays a one-time authorization code; the app exchanges it using its
+locally generated verifier. It does not read browser cookies or credentials.
+No CLI installation or Safari Automation permission is needed for the new flow.
+Ordinary network failures show **未更新 / LLM Center** without a sign-in button.
 
-Credentials are stored in macOS Keychain, separated by platform origin. Existing
-access/refresh pairs continue to renew when less than a minute remains, or retry
-once after a 401. Rotated credentials are saved before another quota request.
-New Safari authorizations use the official device flow, which currently documents
-only a `webToken`, not a refresh token. After a 401, a linked session opens a temporary
-background tab in an existing Safari window. The official web app redirects through
-unified login, which can reuse Safari's SSO session, and completes another device authorization; the native app validates
-the resulting token with a quota request. A new token replaces the previous one
-only after validation. The latest authorization URL is tracked in Keychain as the
-browser connection record; its tab does not need to remain open.
+Access and refresh tokens are stored together in macOS Keychain, separated by
+platform origin. New PKCE sessions use a separate account namespace from older
+logins, without deleting old entries or changing their access controls. A newly
+issued token is validated with a quota request before replacing the saved session.
+The app renews natively when less than a minute remains, or retries once after an
+authentication rejection. Rotated credentials are saved before another quota
+request. Safari can be closed after login. An expired refresh grant requires a
+new explicit login; outages retain the session and back off.
 
-Background recovery requires Safari to be running with an existing window,
-automation permission and a usable SSO session. Closing the original authorization
-tab is supported. Keeping Safari running alone does not guarantee that SSO remains valid.
-Recovery never creates windows, selects a tab, brings Safari forward, or requests
-permission in the background. It attempts to close its temporary tab after success,
-failure or cancellation, only if exactly one unselected tab still has the unique
-authorization URL. Selected, navigated or ambiguous tabs are left alone, including
-pages waiting for a new SSO login. Revoking permission or expiry of the SSO session
-can require an explicit login. The app never
-extracts browser cookies, passwords or refresh tokens. Background authorization
-polling has a 45-second deadline, plus any request already in flight (20 seconds
-maximum per request); completion, cancellation or failure stops polling.
-Outages retain the session and back off. Changing the platform address cancels
-existing requests and requires that origin's login. API redirects are rejected,
-and authorization URLs must have the same HTTPS origin as the configured platform.
-Keychain operations prohibit system authentication prompts. Tokens are cached in
-memory; denied keychain access stops retrying. If a new login cannot be persisted,
-the app uses it in memory and explains that restart will require another login.
-It never loosens keychain permissions or falls back to plaintext token files.
+Authorization metadata comes from the configured HTTPS platform. The authorization
+and token endpoints must share an HTTPS origin, and the callback must return to
+the configured platform. State, client ID, callback and the S256 challenge are
+validated before opening Safari or exchanging the code. Requests reject redirects.
+The protocol version tag required by the platform identifies compatibility with
+llmctl 0.2.15; the app does not execute that CLI.
+
+Older servers and saved web-token sessions retain the original device flow. Only
+that legacy recovery path uses a temporary background Safari tab and previously
+granted Automation permission. It never selects tabs, activates Safari, creates
+windows or asks for permission in the background. Recovery is bounded to 45 seconds
+plus any request already in flight, and cleans up only an unselected tab still
+matching the attempt's unique URL.
+
+Changing the platform address cancels existing requests and requires that origin's
+login. Keychain operations prohibit system authentication prompts, including legacy
+login-keychain ACL dialogs. Tokens are cached in memory; denied access stops retrying.
+If a fresh login cannot be persisted, the app uses it in memory and explains that
+restart will require another login. It never changes keychain access controls or
+falls back to plaintext token files.
 
 ## Energy and freshness
 

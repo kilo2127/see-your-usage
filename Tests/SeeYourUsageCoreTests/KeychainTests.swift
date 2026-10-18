@@ -5,6 +5,26 @@ import XCTest
 @testable import SeeYourUsageCore
 
 final class KeychainTests: XCTestCase {
+    func testLegacyLoginKeychainInteractionIsDisabledBeforeAccess() {
+        let status = NoninteractiveKeychain.perform(failure: { $0 }) {
+            var allowed = DarwinBoolean(true)
+            let status = SecKeychainGetUserInteractionAllowed(&allowed)
+            XCTAssertEqual(status, errSecSuccess)
+            XCTAssertFalse(allowed.boolValue)
+            return status
+        }
+        XCTAssertEqual(status, errSecSuccess)
+        // No keychain item is read or changed by this regression test.
+    }
+
+    func testPolicyFailurePreventsNativeKeychainAccess() {
+        let status = NoninteractiveKeychain.perform(configure: { errSecNotAvailable }, failure: { $0 }) {
+            XCTFail("Keychain access must not proceed while interaction could be enabled")
+            return errSecSuccess
+        }
+        XCTAssertEqual(status, errSecNotAvailable)
+    }
+
     private func assertNoninteractive(_ query: [String: Any]) {
         XCTAssertEqual((query[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed, true)
     }

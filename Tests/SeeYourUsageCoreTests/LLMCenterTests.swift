@@ -50,6 +50,29 @@ final class LLMCenterTests: XCTestCase {
         }
     }
 
+    func testBusinessAuthenticationErrorsRequireRenewal() throws {
+        for code in [401, 1102, 1101, 1005, 1008, 1009, 1010, 1011, 1013, 1017, 1021] {
+            for value: Any in [code, String(code)] {
+                let response = try JSONSerialization.data(withJSONObject: ["code": value, "data": NSNull()])
+                XCTAssertThrowsError(try LLMQuotaSnapshot.decode(response)) {
+                    XCTAssertEqual($0 as? LLMCenterError, .loginRequired)
+                }
+            }
+        }
+    }
+
+    func testUnsupportedLoginProtocolIsNotReportedAsMissingQuota() {
+        let response = Data(#"{"code":400,"message":"当前服务仅支持 llmctl 0.2.12 及以上版本，请先升级 CLI secret-fixture","data":null}"#.utf8)
+        XCTAssertThrowsError(try LLMCenterService.payload(response)) {
+            XCTAssertEqual($0 as? LLMCenterError, .clientUpgradeRequired)
+            XCTAssertFalse($0.localizedDescription.contains("secret-fixture"))
+            XCTAssertFalse($0.localizedDescription.contains("稍后刷新"))
+        }
+        XCTAssertThrowsError(try LLMCenterService.payload(Data(#"{"code":400,"message":"other failure","data":null}"#.utf8))) {
+            XCTAssertEqual($0 as? LLMCenterError, .invalidResponse)
+        }
+    }
+
     func testBeijingMidnightInvalidatesTodayButNotMonth() throws {
         let quota = try LLMQuotaSnapshot.decode(data())
         let iso = ISO8601DateFormatter()

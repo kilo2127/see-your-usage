@@ -99,7 +99,8 @@ final class LLMBrowserLoginTests: XCTestCase, @unchecked Sendable {
         let (service, memory, url) = fixture()
         defer { service.session.invalidateAndCancel() }
         let login = try await service.beginLogin()
-        XCTAssertEqual(login.state.count, 64)
+        XCTAssertEqual(login.state.count, 71)
+        XCTAssertTrue(login.state.hasPrefix("llmctl_"))
         XCTAssertEqual(login.origin, url.absoluteString)
         XCTAssertEqual(login.pollInterval, 2)
         let quota = try await service.completeBrowserLogin(login)

@@ -59,6 +59,6 @@ private final class QuotaProtocol: URLProtocol, @unchecked Sendable {
     let login = try await service.beginLogin()
     #expect(login.pollInterval >= 2)
     #expect(login.expiresAt.timeIntervalSinceNow <= 300)
-    #expect(login.state.count == 64)
+    #expect(login.state.count == 71)
     #expect(try await service.pollLogin(login) == "local-test-fixture")
 }
