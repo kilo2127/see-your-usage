@@ -16,16 +16,21 @@ Product illustrations with example data and simplified controls.
 - **Codex** keeps its segmented remaining-capacity bars and reset dates. Menu width
   follows the date text, with no window labels or refresh dot. Weekly-only responses
   use one row; full window names remain in the popover.
-- **LLM Center** uses two unlabeled rows: personal monthly remaining amount above,
+- **LLM Center** uses two unlabeled rows: the selected Key’s remaining amount above,
   today's spending below. Width follows the text instead of reserving a wide slot.
 - Money uses `¥`: monthly amounts are integers and today's spending has one decimal,
   truncated rather than rounded. Actual zero spending today
   displays `Nah`. Large menu values use `万`; the popover shows the full integer.
-- LLM Center monthly remaining amounts below 3,000 turn yellow; below 1,000 turn red.
-  At 3,000 the color is green; at 1,000 it is yellow. These are the same system colors
-  used by Codex. Codex's percentage thresholds are unchanged.
+- Use **个人 Key / 项目 Key** in the popover to switch both menu values. The app
+  defaults to project usage and remembers the selection. If multiple projects are
+  available, select one in the popover.
+- Personal remaining amounts below 300 are red, 300–599.99 yellow, and 600 or more
+  green. Project balances use 3,000 and 6,000 as the corresponding boundaries.
+  Codex's percentage thresholds are unchanged.
 
-In the expanded LLM Center popover, today's usage is shown above monthly remaining.
+In the expanded LLM Center popover, today's usage is shown above the selected Key's remaining amount. Personal quota
+resets monthly; project mode shows your Key's available credit. In a member-based project,
+spending and allowance belong to your account; shared project keys use project totals.
 
 ## Independent service settings
 
@@ -42,7 +47,13 @@ macOS lists one login item for the app; it runs the services enabled for login.
 
 LLM Center is an optional integration for ModelBest's internal API-key and budget
 platform. It requires authorized company-network access. The implementation reads
-personal quota data; it does not obtain inference API keys or perform model calls.
+personal and selected-project quota data; it does not use inference API keys or perform model calls. Project-detail responses
+include member key fields; the app ignores those fields and decodes only quota data.
+
+LLM Center connects directly through the company network, including its separate
+identity service used for token renewal. These requests do not use the macOS
+system forward proxy. Codex continues to use the system proxy. HTTPS certificate
+validation remains enabled for both services.
 
 In its popover, choose **平台地址…** and enter the HTTPS root URL supplied by your
 organization. The hostname is stored only in local app preferences, not in this
@@ -90,7 +101,10 @@ falls back to plaintext token files.
 
 - AppKit; no Electron, embedded browser, telemetry or CLI subprocess. Safari is
   opened only for a user-requested login; the app does not keep a web view running.
-- One read-only LLM Center request per refresh, plus token renewal when needed;
+- Personal mode uses one read-only quota request per refresh. Project mode reads
+  the project list and today’s statistics. Member-based projects also read the current
+  account, member allowance and available credit (five requests for a single list page),
+  with token renewal when needed;
   no log scanning or cost estimation.
 - One coalescible, one-shot timer per running service: 5 minutes normally,
   10 minutes in Low Power Mode. No high-frequency UI timers or animation loops.

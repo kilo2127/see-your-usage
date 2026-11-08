@@ -2,8 +2,8 @@ import AppKit
 import SeeYourUsageCore
 
 enum UsageColors {
-    static func accent(forMonthlyRemaining remaining: Decimal) -> NSColor {
-        switch UsageRemainingBand.band(forMonthlyRemaining: remaining) {
+    static func accent(forMonthlyRemaining remaining: Decimal, scope: LLMQuotaScope = .personal) -> NSColor {
+        switch UsageRemainingBand.band(forMonthlyRemaining: remaining, scope: scope) {
         case .red: return .systemRed
         case .yellow: return .systemYellow
         case .green: return .systemGreen

@@ -30,12 +30,16 @@ import Testing
 }
 
 @Test func monthlyAmountColorBoundaries() {
-    #expect(UsageRemainingBand.band(forMonthlyRemaining: 3000) == .green)
-    #expect(UsageRemainingBand.band(forMonthlyRemaining: 2999.99) == .yellow)
-    #expect(UsageRemainingBand.band(forMonthlyRemaining: 1000) == .yellow)
-    #expect(UsageRemainingBand.band(forMonthlyRemaining: 999.99) == .red)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 600) == .green)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 599.99) == .yellow)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 300) == .yellow)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 299.99) == .red)
     #expect(UsageRemainingBand.band(forMonthlyRemaining: 0) == .red)
     #expect(UsageRemainingBand.band(forMonthlyRemaining: -1) == .red)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 6000, scope: .project) == .green)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 5999.99, scope: .project) == .yellow)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 3000, scope: .project) == .yellow)
+    #expect(UsageRemainingBand.band(forMonthlyRemaining: 2999.99, scope: .project) == .red)
 }
 
 @Test func platformConfigurationRejectsCredentialsAndInsecureAddresses() {

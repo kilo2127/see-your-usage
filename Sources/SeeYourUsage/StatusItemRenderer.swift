@@ -65,7 +65,7 @@ enum StatusItemRenderer {
                           quota.flatMap { $0.isCurrentDay() ? QuotaFormatting.today($0.todayUsed) : nil }]
             for index in 0..<2 {
                 let color: NSColor = index == 0 && quota != nil && !stale
-                    ? UsageColors.accent(forMonthlyRemaining: quota!.monthlyRemaining) : .labelColor
+                    ? UsageColors.accent(forMonthlyRemaining: quota!.monthlyRemaining, scope: state.quotaScope) : .labelColor
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold),
                     .foregroundColor: color.withAlphaComponent(stale ? 0.5 : 0.95),

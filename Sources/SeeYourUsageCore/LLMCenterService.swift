@@ -5,8 +5,13 @@ import LocalAuthentication
 public enum LLMCenterError: LocalizedError, Equatable {
     case configurationRequired, loginRequired, forbidden, renewalUnavailable, keychainUnavailable, invalidResponse, clientUpgradeRequired, loginExpired, browserUnavailable, browserAutomationRequired, browserTabMissing, unsafeURL, keychain(Int32), http(Int)
 
+    case projectSelectionRequired([LLMProject])
+    case noProjects
+
     public var errorDescription: String? {
         switch self {
+        case .projectSelectionRequired: return "请选择要显示额度的项目。"
+        case .noProjects: return "当前账号没有可查看的项目。"
         case .configurationRequired: return "请先设置 LLM Center 平台地址。"
         case .loginRequired: return "请登录 LLM Center 后查看额度。"
         case .forbidden: return "平台拒绝访问，请检查账号权限或公司内网。"
@@ -34,6 +39,9 @@ public struct LLMQuotaSnapshot: Equatable, Sendable {
     public let todayUsed: Decimal
     public let nextReset: Date?
     public let hasTeam: Bool
+    public var scope: LLMQuotaScope = .personal
+    public var project: LLMProject?
+    public var projects: [LLMProject] = []
 
     public var remainingPercent: Double {
         guard monthlyLimit > 0 else { return 0 }
@@ -45,7 +53,7 @@ public struct LLMQuotaSnapshot: Equatable, Sendable {
     }
 
     public func isCurrentMonth(at now: Date = Date()) -> Bool {
-        Self.calendar.isDate(refreshedAt, equalTo: now, toGranularity: .month)
+        scope == .project || Self.calendar.isDate(refreshedAt, equalTo: now, toGranularity: .month)
     }
 
     public static var calendar: Calendar {
@@ -105,21 +113,7 @@ private struct QuotaMoneyEnvelope: Decodable {
         let monthlyRemaining: Amount
         let todayUsed: Amount
     }
-    struct Amount: Decodable {
-        let value: Decimal
-        init(from decoder: Decoder) throws {
-            let container = try decoder.singleValueContainer()
-            if let string = try? container.decode(String.self) {
-                guard string.range(of: #"^-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"#, options: .regularExpression) != nil,
-                      let decimal = Decimal(string: string, locale: Locale(identifier: "en_US_POSIX")),
-                      !decimal.isNaN else { throw LLMCenterError.invalidResponse }
-                value = decimal
-            } else {
-                value = try container.decode(Decimal.self)
-                guard !value.isNaN else { throw LLMCenterError.invalidResponse }
-            }
-        }
-    }
+    typealias Amount = QuotaAmount
 }
 
 public enum QuotaFormatting {
@@ -317,6 +311,12 @@ public struct LLMCenterService: Sendable {
         config.waitsForConnectivity = false
         config.httpMaximumConnectionsPerHost = 1
         config.urlCache = nil
+        // The quota platform and its separate identity service use the company
+        // network. A system forward proxy can reach quota while failing TLS to
+        // the identity service, which blocks every refresh after token expiry.
+        // Use the company route for both; keep normal TLS validation and the
+        // redirect restriction. Codex uses its own session and system proxy.
+        config.connectionProxyDictionary = [:]
         self.session = session ?? URLSession(configuration: config, delegate: NoRedirects(), delegateQueue: nil)
         self.tokens = tokens
         self.endpoint = endpoint
@@ -328,10 +328,10 @@ public struct LLMCenterService: Sendable {
     public typealias BrowserReconnect = @Sendable (_ previousURL: URL, _ authorizationURL: URL) async throws -> Void
     public typealias BrowserReconnectFinished = @Sendable (_ authorizationURL: URL) async -> Void
 
-    public func fetchUsage(reconnect: BrowserReconnect? = nil,
+    public func fetchUsage(scope: LLMQuotaScope = .personal, projectCode: String? = nil, reconnect: BrowserReconnect? = nil,
                            finishReconnect: BrowserReconnectFinished? = nil) async throws -> LLMQuotaSnapshot {
         do {
-            return try await fetchSavedUsage()
+            return try await fetchSavedUsage(scope: scope, projectCode: projectCode)
         } catch LLMCenterError.loginRequired {
             guard let reconnect, let origin = resolvedURL?.absoluteString,
                   let previousURL = try await authentication.browserAuthorizationURL(origin: origin) else {
@@ -350,7 +350,7 @@ public struct LLMCenterService: Sendable {
                 }
                 let quota = try await completeBrowserLogin(login, keepAuthorizationTab: true)
                 await finishReconnect?(login.url)
-                return quota
+                return scope == .personal ? quota : try await fetchSavedUsage(scope: scope, projectCode: projectCode)
             } catch {
                 await finishReconnect?(login.url)
                 throw error
@@ -358,23 +358,94 @@ public struct LLMCenterService: Sendable {
         }
     }
 
-    private func fetchSavedUsage() async throws -> LLMQuotaSnapshot {
+    private func fetchSavedUsage(scope: LLMQuotaScope, projectCode: String?) async throws -> LLMQuotaSnapshot {
         guard let origin = resolvedURL?.absoluteString else { throw LLMCenterError.configurationRequired }
         guard try await authentication.hasSession(origin: origin) else {
-            return try await fetchUsage(token: tokens.load(expectedOrigin: origin), expectedOrigin: origin)
+            return try await fetchUsage(token: tokens.load(expectedOrigin: origin), expectedOrigin: origin, scope: scope, projectCode: projectCode)
         }
         let token = try await authentication.accessToken(origin: origin)
         do {
-            return try await fetchUsage(token: token, expectedOrigin: origin)
+            return try await fetchUsage(token: token, expectedOrigin: origin, scope: scope, projectCode: projectCode)
         } catch LLMCenterError.loginRequired {
             let renewed = try await authentication.accessToken(origin: origin, rejectedToken: token)
-            return try await fetchUsage(token: renewed, expectedOrigin: origin)
+            return try await fetchUsage(token: renewed, expectedOrigin: origin, scope: scope, projectCode: projectCode)
         }
     }
 
-    public func fetchUsage(token: String, expectedOrigin: String? = nil) async throws -> LLMQuotaSnapshot {
+    public func fetchUsage(token: String, expectedOrigin: String? = nil, scope: LLMQuotaScope = .personal, projectCode: String? = nil) async throws -> LLMQuotaSnapshot {
+        if scope == .project { return try await fetchProjectUsage(token: token, expectedOrigin: expectedOrigin, projectCode: projectCode) }
         let data = try await request(path: "/llm/api/department/my/quota-overview", token: token, expectedOrigin: expectedOrigin)
         return try LLMQuotaSnapshot.decode(data)
+    }
+
+    private func fetchProjectUsage(token: String, expectedOrigin: String?, projectCode: String?) async throws -> LLMQuotaSnapshot {
+        let startedAt = Date()
+        var projects: [LLMProjectPage.Project] = []
+        var page = 1
+        while true {
+            let data = try await request(path: "/llm/api/app/list", token: token,
+                body: ["pageReq": ["pageNum": page, "pageSize": 100]], expectedOrigin: expectedOrigin)
+            _ = try Self.payload(data)
+            guard let result = try? JSONDecoder().decode(LLMProjectPage.self, from: data) else {
+                throw LLMCenterError.invalidResponse
+            }
+            projects.append(contentsOf: result.data.data)
+            if projects.count >= result.data.total { break }
+            guard !result.data.data.isEmpty, page < 100 else { throw LLMCenterError.invalidResponse }
+            page += 1
+        }
+        guard !projects.isEmpty else { throw LLMCenterError.noProjects }
+        let choices = projects.map(\.summary)
+        let selected = projects.first { $0.appCode == projectCode } ?? (projects.count == 1 ? projects.first : nil)
+        guard let selected else { throw LLMCenterError.projectSelectionRequired(choices) }
+        var accountID: String?
+        let balance: Decimal
+        let used: Decimal
+        let limit: Decimal
+        if selected.appType == "MEMBER" {
+            let identity = try Self.payload(await request(path: "/api/admin/auth/check/token", token: token,
+                body: ["token": token, "thirdType": "feilian"], expectedOrigin: expectedOrigin))
+            guard let id = identity["id"] as? String, !id.isEmpty else { throw LLMCenterError.invalidResponse }
+            accountID = id
+            let detailData = try await request(path: "/llm/api/app/detail/" + selected.id, token: token, expectedOrigin: expectedOrigin)
+            _ = try Self.payload(detailData)
+            guard let detail = try? JSONDecoder().decode(LLMProjectDetail.self, from: detailData),
+                  let member = detail.data.members.first(where: { $0.userId == id }) else {
+                throw LLMCenterError.invalidResponse
+            }
+            let overviewData = try await request(path: "/llm/api/app/usage-overview", token: token,
+                query: [URLQueryItem(name: "appCode", value: selected.appCode)], expectedOrigin: expectedOrigin)
+            _ = try Self.payload(overviewData)
+            guard let overview = try? JSONDecoder().decode(LLMProjectOverview.self, from: overviewData),
+                  overview.data.quotaLimited, let available = overview.data.availableQuota?.value else {
+                throw LLMCenterError.invalidResponse
+            }
+            balance = available
+            used = member.memberUsedQuota.value
+            guard let memberLimit = member.memberQuotaLimit?.value ?? selected.memberQuotaAmount?.value else {
+                throw LLMCenterError.invalidResponse
+            }
+            limit = memberLimit
+        } else if selected.appType == "PROJECT", let remaining = selected.accountBalance?.value,
+                  let spent = selected.usedQuota?.value {
+            balance = remaining
+            used = spent
+            limit = remaining + spent
+        } else { throw LLMCenterError.invalidResponse }
+        let day = QuotaFormatting.timestamp(startedAt, format: "yyyy-MM-dd")
+        var filters: [String: Any] = ["scope": "PROJECT", "freeUser": 0, "appCodes": [selected.appCode],
+                                      "startDate": day, "endDate": day]
+        if let accountID { filters["accountIds"] = [accountID] }
+        let data = try await request(path: "/llm/api/usage/statistics", token: token,
+            body: filters, expectedOrigin: expectedOrigin)
+        _ = try Self.payload(data)
+        guard let statistics = try? JSONDecoder().decode(LLMProjectStatistics.self, from: data) else {
+            throw LLMCenterError.invalidResponse
+        }
+        return LLMQuotaSnapshot(fetchedAt: Date(), refreshedAt: startedAt,
+            monthlyLimit: limit, monthlyUsed: used, monthlyRemaining: balance,
+            todayUsed: statistics.data.totalCost.value, nextReset: nil, hasTeam: true,
+            scope: .project, project: selected.summary, projects: choices)
     }
 
     public struct LoginSession: Sendable {
@@ -449,7 +520,7 @@ public struct LLMCenterService: Sendable {
         }
     }
 
-    private func request(path: String, token: String? = nil, body: [String: String]? = nil,
+    private func request(path: String, token: String? = nil, body: [String: Any]? = nil,
                          query: [URLQueryItem] = [], expectedOrigin: String? = nil) async throws -> Data {
         try Task.checkCancellation()
         guard let baseURL = resolvedURL else { throw LLMCenterError.configurationRequired }
@@ -491,7 +562,7 @@ public struct LLMCenterService: Sendable {
             throw LLMCenterError.clientUpgradeRequired
         }
         guard root["success"] as? Bool != false,
-              code == nil || code == "200" || code == "0",
+              code == nil || code == "200" || code == "0" || code == "0000",
               let data = root["data"] as? [String: Any] else { throw LLMCenterError.invalidResponse }
         return data
     }

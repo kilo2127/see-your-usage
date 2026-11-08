@@ -100,7 +100,7 @@ final class UsageMenuItemController: NSObject, NSPopoverDelegate {
     private var eventMonitors: [Any] = []
 
     init(provider: UsageProvider) {
-        store = UsageStore(initialState: UsageViewState(provider: provider))
+        store = UsageStore(initialState: UsageStore.savedState(provider: provider))
         super.init()
     }
 
@@ -149,7 +149,7 @@ final class UsageMenuItemController: NSObject, NSPopoverDelegate {
             let today = quota.flatMap { $0.isCurrentDay() ? QuotaFormatting.today($0.todayUsed) : nil } ?? "—"
             let timestamp = quota.map { "\n上次更新 " + QuotaFormatting.timestamp($0.refreshedAt, format: "M/d HH:mm") } ?? ""
             let status = state.isPaused ? " · 已暂停" : (state.errorMessage == nil ? "" : " · 未更新")
-            button.toolTip = "LLM Center\(status) · 本月剩余 \(remaining) · 今日已用 \(today)\(timestamp)"
+            button.toolTip = "LLM Center\(status) · \(state.quotaScope.title) · \(state.quotaScope.remainingTitle) \(remaining) · 今日已用 \(today)\(timestamp)"
             if let prompt = state.menuPrompt {
                 button.toolTip = prompt.0 + " " + prompt.1 + (state.errorMessage.map { "\n" + $0 } ?? "")
             }

@@ -17,6 +17,7 @@ final class UsagePanelView: NSView {
     var quotaCaption = "" { didSet { needsDisplay = true } }
     var quotaFooter = "" { didSet { needsDisplay = true } }
     var monthlyRemaining: Decimal? { didSet { needsDisplay = true } }
+    var quotaScope: LLMQuotaScope = .personal { didSet { needsDisplay = true } }
     var quotaPercent: Double? { didSet { needsDisplay = true } }
     var isQuota = false { didSet { needsDisplay = true } }
     var isToday = false { didSet { needsDisplay = true } }
@@ -105,7 +106,7 @@ final class UsagePanelView: NSView {
         let cellWidth = (barRect.width - gap * CGFloat(cellCount - 1)) / CGFloat(cellCount)
         let remainingPercent = isQuota ? (quotaPercent ?? 0) : (usageWindow?.remainingPercent ?? 0)
         let litCells = Int(round((remainingPercent / 100) * Double(cellCount)))
-        let liveColor = isQuota ? monthlyRemaining.map { UsageColors.accent(forMonthlyRemaining: $0) } ?? .secondaryLabelColor : UsageColors.accent(forRemainingPercent: remainingPercent)
+        let liveColor = isQuota ? monthlyRemaining.map { UsageColors.accent(forMonthlyRemaining: $0, scope: quotaScope) } ?? .secondaryLabelColor : UsageColors.accent(forRemainingPercent: remainingPercent)
         let usedColor = NSColor.labelColor.withAlphaComponent(0.13)
 
         for index in 0..<cellCount {
@@ -122,7 +123,7 @@ final class UsagePanelView: NSView {
             .font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor])
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .right
-        let color = isToday ? NSColor.labelColor : monthlyRemaining.map { UsageColors.accent(forMonthlyRemaining: $0) } ?? .labelColor
+        let color = isToday ? NSColor.labelColor : monthlyRemaining.map { UsageColors.accent(forMonthlyRemaining: $0, scope: quotaScope) } ?? .labelColor
         let amount = quotaAmount ?? "—"
         var font = NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .semibold)
         while amount.size(withAttributes: [.font: font]).width > rect.width - 99 && font.pointSize > 14 {
@@ -135,7 +136,7 @@ final class UsagePanelView: NSView {
         captionParagraph.lineBreakMode = .byTruncatingMiddle
         let captionStyle: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: captionParagraph]
         quotaCaption.draw(in: NSRect(x: 14, y: rect.height - 55, width: rect.width - 28, height: 15), withAttributes: captionStyle)
-        if !isToday { quotaFooter.draw(at: NSPoint(x: 14, y: 12), withAttributes: captionStyle) }
+        if !isToday { quotaFooter.draw(in: NSRect(x: 14, y: 12, width: rect.width - 28, height: 15), withAttributes: captionStyle) }
     }
 
 }

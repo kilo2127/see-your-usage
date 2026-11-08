@@ -6,7 +6,10 @@ import Testing
 
 @Test @MainActor func dashboardLayoutAndMenuWidth() throws {
     _ = NSApplication.shared
-    let store = UsageStore(initialState: UsageViewState(provider: .llmCenter))
+    let defaultsName = "see-your-usage.test.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: defaultsName)!
+    defer { defaults.removePersistentDomain(forName: defaultsName) }
+    let store = UsageStore(initialState: UsageViewState(provider: .llmCenter), defaults: defaults)
     let now = Date()
     let iso = ISO8601DateFormatter()
     let payload: [String: Any] = [
@@ -51,6 +54,36 @@ import Testing
         let image = StatusItemRenderer.image(for: store.state, appearance: NSAppearance(named: .aqua))
         let rep = NSBitmapImageRep(data: try #require(image.tiffRepresentation))
         try rep?.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: directory).appendingPathComponent("menu.png"))
+    }
+    let selector = try #require(controller.view.subviews.flatMap(\.subviews).compactMap { $0 as? NSSegmentedControl }.first)
+    #expect(selector.selectedSegment == 0)
+    var project = try LLMQuotaSnapshot.decode(JSONSerialization.data(withJSONObject: ["code": 0, "data": [
+        "hasDept": true, "monthlyLimit": 10000, "monthlyUsed": 1363.41,
+        "monthlyRemaining": 8636.59, "todayUsed": 401.12, "refreshTime": iso.string(from: now)
+    ]]))
+    project.scope = .project
+    project.projects = [LLMProject(appCode: "demo-one", appTitle: "示例项目 A"), LLMProject(appCode: "demo-two", appTitle: "示例项目 B")]
+    project.project = project.projects[0]
+    store.selectQuota(scope: .project)
+    store.setQuota(project)
+    controller.view.frame.size = DashboardViewController.preferredContentSize(for: store.state)
+    controller.view.layoutSubtreeIfNeeded()
+    verify(controller.view)
+    #expect(selector.selectedSegment == 1)
+    #expect(panels.last?.title == "总剩余")
+    #expect(panels.last?.quotaAmount == "¥8,636")
+    let projects = try #require(controller.view.subviews.flatMap(\.subviews).compactMap { $0 as? NSPopUpButton }.first)
+    #expect(!projects.isHidden)
+    #expect(projects.numberOfItems == 2)
+    #expect(projects.titleOfSelectedItem == "示例项目 A")
+    if let directory = ProcessInfo.processInfo.environment["SEE_USAGE_QA_DIR"] {
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            controller.view.appearance = NSAppearance(named: appearance)
+            controller.view.needsDisplay = true
+            let rep = try #require(controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
+            controller.view.cacheDisplay(in: controller.view.bounds, to: rep)
+            try rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: directory).appendingPathComponent("dashboard-project-\(name).png"))
+        }
     }
     store.setError(LLMCenterError.loginRequired)
     controller.view.frame.size = DashboardViewController.preferredContentSize(for: store.state)

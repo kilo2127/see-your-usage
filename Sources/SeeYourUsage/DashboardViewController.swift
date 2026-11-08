@@ -10,7 +10,7 @@ final class DashboardViewController: NSViewController {
     static func preferredContentSize(for state: UsageViewState) -> NSSize {
         if state.provider == .llmCenter {
             let login = state.showsLoginAction
-            return NSSize(width: contentWidth, height: 450 + (login ? 40 : 0) + (state.errorMessage != nil || state.quota?.hasTeam == false ? 40 : 0))
+            return NSSize(width: contentWidth, height: 486 + (state.quotaScope == .project && state.projects.count > 1 ? 38 : 0) + (login ? 40 : 0) + (state.errorMessage != nil || state.quota?.hasTeam == false ? 40 : 0))
         }
         let windowCount = state.snapshot?.windows.count ?? 1
         return NSSize(
@@ -24,6 +24,8 @@ final class DashboardViewController: NSViewController {
     private let preferences = ServicePreferences.shared
     private var observerID: UUID?
 
+    private let quotaSelector = NSSegmentedControl(labels: ["个人 Key", "项目 Key"], trackingMode: .selectOne, target: nil, action: nil)
+    private let projectSelector = NSPopUpButton(frame: .zero, pullsDown: false)
     private let titleLabel = NSTextField(labelWithString: "see-your-usage")
     private let subtitleLabel = NSTextField(labelWithString: "Not refreshed yet")
     private let refreshButton = NSButton()
@@ -89,6 +91,17 @@ final class DashboardViewController: NSViewController {
         ])
 
         stack.addArrangedSubview(makeHeader())
+        quotaSelector.target = self
+        quotaSelector.action = #selector(changeQuotaScope)
+        quotaSelector.segmentStyle = .rounded
+        quotaSelector.setAccessibilityLabel("显示的 Key 额度")
+        stack.addArrangedSubview(quotaSelector)
+        projectSelector.target = self
+        projectSelector.action = #selector(changeProject)
+        projectSelector.setAccessibilityLabel("选择项目")
+        projectSelector.translatesAutoresizingMaskIntoConstraints = false
+        projectSelector.widthAnchor.constraint(equalToConstant: 308).isActive = true
+        stack.addArrangedSubview(projectSelector)
 
         fiveHourPanel.title = "5-hour window"
         sevenDayPanel.title = "7-day window"
@@ -255,6 +268,20 @@ final class DashboardViewController: NSViewController {
     }
 
     private func render(_ state: UsageViewState) {
+        quotaSelector.isHidden = state.provider != .llmCenter
+        projectSelector.isHidden = state.provider != .llmCenter || state.quotaScope != .project || state.projects.count <= 1
+        quotaSelector.selectedSegment = state.quotaScope == .personal ? 0 : 1
+        quotaSelector.isEnabled = !state.isLoggingIn
+        projectSelector.isEnabled = !state.isLoggingIn
+        projectSelector.removeAllItems()
+        if state.needsProjectSelection { projectSelector.addItem(withTitle: "请选择项目") }
+        for project in state.projects {
+            projectSelector.addItem(withTitle: project.appTitle)
+            projectSelector.lastItem?.representedObject = project.appCode
+        }
+        if let selected = projectSelector.itemArray.first(where: { ($0.representedObject as? String) == state.projectCode }) {
+            projectSelector.select(selected)
+        }
         addressButton.isHidden = store.state.provider != .llmCenter
         titleLabel.stringValue = state.provider == .llmCenter ? "LLM Center" : "see-your-usage"
         platformButton.title = state.provider == .llmCenter ? "打开 LLM Center ↗" : "打开 Codex 用量 ↗"
@@ -328,15 +355,17 @@ final class DashboardViewController: NSViewController {
         panelHeights[0].constant = 78
         panelHeights[1].constant = 118
         fiveHourPanel.title = "今日已用"
-        sevenDayPanel.title = "本月剩余"
+        sevenDayPanel.title = state.quotaScope.remainingTitle
+        sevenDayPanel.quotaScope = state.quotaScope
         fiveHourPanel.quotaAmount = quota.flatMap { $0.isCurrentDay() ? QuotaFormatting.today($0.todayUsed) : nil }
         sevenDayPanel.quotaAmount = quota.flatMap { $0.isCurrentMonth() ? QuotaFormatting.amount($0.monthlyRemaining) : nil }
         sevenDayPanel.monthlyRemaining = quota.flatMap { $0.isCurrentMonth() ? $0.monthlyRemaining : nil }
         sevenDayPanel.quotaPercent = quota.flatMap { $0.isCurrentMonth() ? $0.remainingPercent : nil }
         sevenDayPanel.quotaCaption = quota.map {
-            $0.isCurrentMonth() ? "已用 \(QuotaFormatting.amount($0.monthlyUsed)) / 月度额度 \(QuotaFormatting.amount($0.monthlyLimit))" : "数据已跨月，等待刷新本月额度"
-        } ?? "登录后显示个人月度额度"
+            $0.isCurrentMonth() ? "已用 \(QuotaFormatting.amount($0.monthlyUsed)) / \(state.quotaScope == .personal ? "月度额度" : "总额度") \(QuotaFormatting.amount($0.monthlyLimit))" : "数据已跨月，等待刷新本月额度"
+        } ?? "等待获取\(state.quotaScope.title)额度"
         sevenDayPanel.quotaFooter = quota.map {
+            if $0.scope == .project { return String(format: "剩余 %.1f%%", $0.remainingPercent) + " · " + ($0.project?.appTitle ?? "项目 Key") }
             let reset = $0.nextReset.map { QuotaFormatting.timestamp($0, format: "M 月 d 日") + "重置" } ?? "重置时间未返回"
             return String(format: "剩余 %.1f%% · ", $0.remainingPercent) + reset
         } ?? ""
@@ -352,6 +381,15 @@ final class DashboardViewController: NSViewController {
         if message == nil, quota?.hasTeam == false { message = "尚未加入团队，请联系团队负责人分配额度。" }
         errorLabel.stringValue = message ?? ""
         errorLabel.isHidden = message == nil
+    }
+
+    @objc private func changeQuotaScope() {
+        coordinator.selectQuota(scope: quotaSelector.selectedSegment == 0 ? .personal : .project)
+    }
+
+    @objc private func changeProject() {
+        guard let code = projectSelector.selectedItem?.representedObject as? String else { return }
+        coordinator.selectQuota(scope: .project, projectCode: code)
     }
 
     @objc private func login() {

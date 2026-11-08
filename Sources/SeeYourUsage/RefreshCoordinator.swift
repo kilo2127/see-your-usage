@@ -56,6 +56,18 @@ final class RefreshCoordinator {
         }
     }
 
+    func selectQuota(scope: LLMQuotaScope, projectCode: String? = nil) {
+        guard !store.state.isLoggingIn else { return }
+        cancelRequests()
+        timer?.invalidate()
+        timer = nil
+        failureCount = 0
+        lastAttempt = nil
+        nextAttempt = nil
+        store.selectQuota(scope: scope, projectCode: projectCode)
+        refresh()
+    }
+
     enum LoginSource: String { case dashboard, statusMenu }
 
     func login(source: LoginSource) {
@@ -89,7 +101,12 @@ final class RefreshCoordinator {
                 lastAttempt = Date()
                 loginTask = nil
                 logger.notice("Browser authorization completed; persistent: \(saved, privacy: .public)")
-                scheduleNextRefresh()
+                if store.state.quotaScope == .project {
+                    lastAttempt = nil
+                    refresh()
+                } else {
+                    scheduleNextRefresh()
+                }
                 return
             } catch is CancellationError {
                 guard !Task.isCancelled else { return }
@@ -139,11 +156,13 @@ final class RefreshCoordinator {
         store.setRefreshing(true)
         let current = generation
         let provider = store.state.provider
+        let scope = store.state.quotaScope
+        let projectCode = store.state.projectCode
         requestTask = Task {
             do {
                 if provider == .llmCenter {
                     let logger = self.logger
-                    let quota = try await llmService.fetchUsage(reconnect: { previous, next in
+                    let quota = try await llmService.fetchUsage(scope: scope, projectCode: projectCode, reconnect: { previous, next in
                         logger.notice("Safari session renewal requested after authentication rejection")
                         try await SafariLogin.reconnect(previousURL: previous, authorizationURL: next)
                         logger.notice("Temporary Safari authorization tab opened in background")
@@ -166,6 +185,8 @@ final class RefreshCoordinator {
                 if provider == .llmCenter {
                     let reason: String
                     switch error as? LLMCenterError {
+                    case .configurationRequired: reason = "configuration_required"
+                    case .keychainUnavailable: reason = "keychain_unavailable"
                     case .loginRequired: reason = "login_required"
                     case .loginExpired: reason = "browser_authorization_expired"
                     case .browserAutomationRequired: reason = "safari_permission_missing"
@@ -173,7 +194,12 @@ final class RefreshCoordinator {
                     case .clientUpgradeRequired: reason = "client_protocol_outdated"
                     case .invalidResponse: reason = "invalid_response"
                     case .http(let status): reason = "http_\(status)"
-                    default: reason = "request_failed"
+                    default:
+                        if let networkError = error as? URLError {
+                            reason = "network_\(networkError.code.rawValue)"
+                        } else {
+                            reason = "request_failed"
+                        }
                     }
                     logger.error("LLM refresh failed: \(reason, privacy: .public)")
                 }
@@ -190,7 +216,7 @@ final class RefreshCoordinator {
         timer?.invalidate()
         timer = nil
         guard !sleeping, !store.state.isPaused, !store.state.needsLogin,
-              !store.state.isLoggingIn, !store.state.needsConfiguration else { return }
+              !store.state.isLoggingIn, !store.state.needsConfiguration, !store.state.needsProjectSelection else { return }
         let interval: TimeInterval
         if failureCount > 0 {
             interval = min(3600, pow(2, Double(min(failureCount - 1, 4))) * 300)

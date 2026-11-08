@@ -17,7 +17,11 @@ internal platform. Users supply their own HTTPS origin and authenticate normally
 - Codex login: read locally from the user's existing auth file, without modification.
 - Usage: held in memory. No analytics, remote collection, or request-log export.
 
-LLM Center requests are limited to personal quota retrieval, login and OIDC renewal.
+LLM Center requests are limited to personal quota, project listings and quota details, current-account identity,
+selected-project usage statistics, login and OIDC renewal. Member-based project
+statistics are filtered by the current account, project and Beijing date. The
+platform includes member key fields in project details; the decoder ignores them.
+The app does not use, persist or log inference keys.
 Login uses the platform's official session and polling API with PKCE (S256).
 A 32-byte secure random verifier remains in memory; only its SHA-256 challenge is
 sent when creating a session. Safari visits the returned OIDC authorization URL.
@@ -30,6 +34,9 @@ requires the authorization and token endpoints to share an HTTPS origin and the
 callback to belong to the platform. It verifies state, client ID, callback,
 response type and PKCE challenge before opening the browser or exchanging a code.
 Native API, code exchange, discovery and renewal requests reject redirects.
+These LLM Center requests use a direct connection through the company network,
+without the system forward proxy; HTTPS certificate validation is unchanged.
+The independent Codex connection continues to use system proxy settings.
 A failed exchange or quota validation preserves the previously saved credentials.
 Rotating refresh grants finish saving even when the caller cancels.
 
