@@ -45,15 +45,6 @@ struct LLMProjectPage: Decodable {
     }
 }
 
-struct LLMProjectOverview: Decodable {
-    let data: Overview
-    struct Overview: Decodable {
-        let quotaAvailable: Bool
-        let quotaLimited: Bool
-        let availableQuota: QuotaAmount?
-    }
-}
-
 struct LLMProjectDetail: Decodable {
     let data: Detail
     struct Detail: Decodable { let members: [Member] }

@@ -413,19 +413,14 @@ public struct LLMCenterService: Sendable {
                   let member = detail.data.members.first(where: { $0.userId == id }) else {
                 throw LLMCenterError.invalidResponse
             }
-            let overviewData = try await request(path: "/llm/api/app/usage-overview", token: token,
-                query: [URLQueryItem(name: "appCode", value: selected.appCode)], expectedOrigin: expectedOrigin)
-            _ = try Self.payload(overviewData)
-            guard let overview = try? JSONDecoder().decode(LLMProjectOverview.self, from: overviewData),
-                  overview.data.quotaLimited, let available = overview.data.availableQuota?.value else {
-                throw LLMCenterError.invalidResponse
-            }
-            balance = available
             used = member.memberUsedQuota.value
             guard let memberLimit = member.memberQuotaLimit?.value ?? selected.memberQuotaAmount?.value else {
                 throw LLMCenterError.invalidResponse
             }
             limit = memberLimit
+            // Match the project page's member balance, using the same allowance
+            // and spending shown in this snapshot rather than the usage overview.
+            balance = max(0, limit - used)
         } else if selected.appType == "PROJECT", let remaining = selected.accountBalance?.value,
                   let spent = selected.usedQuota?.value {
             balance = remaining

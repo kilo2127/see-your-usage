@@ -38,10 +38,18 @@ private final class ProjectQuotaProtocol: URLProtocol, @unchecked Sendable {
             #expect(body?["token"] as? String == "fixture")
             json = #"{"code":"0000","data":{"id":"self"}}"#
         case "/llm/api/app/detail/10":
-            json = #"{"code":0,"data":{"members":[{"userId":"other","memberQuotaLimit":50000,"memberUsedQuota":9999},{"userId":"self","memberQuotaLimit":12000,"memberUsedQuota":1363.41,"accessKey":"unused-fixture"}]}}"#
+            switch url.host {
+            case "default-limit.quota.example.invalid":
+                json = #"{"code":0,"data":{"members":[{"userId":"self","memberQuotaLimit":null,"memberUsedQuota":"9475.25"}]}}"#
+            case "exceeded.quota.example.invalid":
+                json = #"{"code":0,"data":{"members":[{"userId":"self","memberQuotaLimit":12000,"memberUsedQuota":12001.23}]}}"#
+            default:
+                json = #"{"code":0,"data":{"members":[{"userId":"other","memberQuotaLimit":50000,"memberUsedQuota":9999},{"userId":"self","memberQuotaLimit":12000,"memberUsedQuota":1363.41,"accessKey":"unused-fixture"}]}}"#
+            }
         case "/llm/api/app/usage-overview":
-            #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "appCode", value: "sample-project")])
-            json = #"{"code":0,"data":{"quotaAvailable":true,"quotaLimited":true,"availableQuota":10636.59}}"#
+            Issue.record("Member balances must use the member allowance and spending, without an overview request")
+            // An overview balance of zero must not replace the member's allowance.
+            json = #"{"code":0,"data":{"quotaAvailable":false,"quotaLimited":true,"availableQuota":0}}"#
         case "/llm/api/usage/statistics":
             #expect(body?["scope"] as? String == "PROJECT")
             #expect(body?["freeUser"] as? Int == 0)
@@ -61,10 +69,10 @@ private final class ProjectQuotaProtocol: URLProtocol, @unchecked Sendable {
     }
 }
 
-private func projectFixtureService() -> LLMCenterService {
+private func projectFixtureService(host: String = "quota.example.invalid") -> LLMCenterService {
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [ProjectQuotaProtocol.self]
-    return LLMCenterService(session: URLSession(configuration: config), endpoint: URL(string: "https://quota.example.invalid")!)
+    return LLMCenterService(session: URLSession(configuration: config), endpoint: URL(string: "https://\(host)")!)
 }
 
 @Test func projectQuotaUsesOwnAllowanceAndOwnTodayCost() async throws {
@@ -80,6 +88,27 @@ private func projectFixtureService() -> LLMCenterService {
     #expect(quota.nextReset == nil)
     #expect(quota.isCurrentMonth(at: Date().addingTimeInterval(60 * 60 * 24 * 40)))
     #expect(!quota.isCurrentDay(at: Date().addingTimeInterval(60 * 60 * 24 * 40)))
+}
+
+@Test func projectMemberBalanceUsesDefaultAllowanceWhenMemberLimitIsNull() async throws {
+    let service = projectFixtureService(host: "default-limit.quota.example.invalid")
+    defer { service.session.invalidateAndCancel() }
+    let quota = try await service.fetchUsage(token: "fixture", scope: .project, projectCode: "sample-project")
+    #expect(quota.monthlyLimit == 10000)
+    #expect(quota.monthlyUsed == Decimal(string: "9475.25"))
+    #expect(quota.monthlyRemaining == Decimal(string: "524.75"))
+    #expect(QuotaFormatting.amount(quota.monthlyRemaining) == "¥524")
+    #expect(abs(quota.remainingPercent - 5.2475) < 0.000001)
+}
+
+@Test func projectMemberBalanceStopsAtZeroWhenAllowanceIsExceeded() async throws {
+    let service = projectFixtureService(host: "exceeded.quota.example.invalid")
+    defer { service.session.invalidateAndCancel() }
+    let quota = try await service.fetchUsage(token: "fixture", scope: .project, projectCode: "sample-project")
+    #expect(quota.monthlyLimit == 12000)
+    #expect(quota.monthlyUsed == Decimal(string: "12001.23"))
+    #expect(quota.monthlyRemaining == 0)
+    #expect(quota.remainingPercent == 0)
 }
 
 @Test func multipleProjectsRequireSelectionAndKeepAllPages() async throws {

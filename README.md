@@ -30,7 +30,9 @@ Product illustrations with example data and simplified controls.
 
 In the expanded LLM Center popover, today's usage is shown above the selected Key's remaining amount. Personal quota
 resets monthly; project mode shows your Key's available credit. In a member-based project,
-spending and allowance belong to your account; shared project keys use project totals.
+spending and allowance belong to your account. Remaining credit is your member
+allowance minus your spending, with a minimum of zero, matching the project page.
+Shared project keys use project totals.
 
 ## Independent service settings
 
@@ -103,7 +105,7 @@ falls back to plaintext token files.
   opened only for a user-requested login; the app does not keep a web view running.
 - Personal mode uses one read-only quota request per refresh. Project mode reads
   the project list and today’s statistics. Member-based projects also read the current
-  account, member allowance and available credit (five requests for a single list page),
+  account and member allowance (four requests for a single list page),
   with token renewal when needed;
   no log scanning or cost estimation.
 - One coalescible, one-shot timer per running service: 5 minutes normally,
